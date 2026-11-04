@@ -117,6 +117,15 @@ export const SecretsContent = ({
       });
       setCreateOpen(true);
       router.replace(window.location.pathname, { scroll: false });
+    } else if (createType === "eysho" && typeFilter === "llm") {
+      paramHandled.current = true;
+      setPrefill({
+        type: "eysho",
+        hostPattern: "api.eysho.info",
+        name: "Eysho Token",
+      });
+      setCreateOpen(true);
+      router.replace(window.location.pathname, { scroll: false });
     } else if (createType === "generic" && typeFilter === "generic" && host) {
       paramHandled.current = true;
       setPrefill({
@@ -217,7 +226,7 @@ export const SecretsContent = ({
         prefill={prefill}
         defaultType={typeFilter === "generic" ? "generic" : undefined}
         allowedTypes={
-          typeFilter === "llm" ? ["anthropic", "openai"] : undefined
+          typeFilter === "llm" ? ["anthropic", "openai", "eysho"] : undefined
         }
         secretActions={secretActions}
         onSaved={(created) => {
