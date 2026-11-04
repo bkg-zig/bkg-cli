@@ -40,7 +40,7 @@ COPY --from=deps /app/ .
 COPY --from=pruner /app/out/full/ .
 RUN pnpm --filter @onecli/db generate
 # Dummy DATABASE_URL satisfies Prisma during static page generation
-RUN --mount=type=cache,target=/app/apps/web/.next/cache \
+RUN --mount=type=cache,id=s/41b5514b-98dd-4cd5-990b-fe9a38b086d2-/app/apps/web/.next/cache,target=/app/apps/web/.next/cache \
     DATABASE_URL="postgresql://build:build@localhost/build" \
     pnpm build --filter=@onecli/web
 
