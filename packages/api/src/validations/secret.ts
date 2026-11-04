@@ -529,7 +529,12 @@ export const parseEyshoMetadata = (
   return null;
 };
 
-export const detectEyshoAuthMode = (value: string): EyshoAuthMode => "api-key";
+/**
+ * Eysho speaks one auth mode: a bearer API key. There is no OAuth variant to
+ * detect, so the credential value itself is irrelevant here — the mode is a
+ * constant of the provider, not a property of the key.
+ */
+export const detectEyshoAuthMode = (): EyshoAuthMode => "api-key";
 
 /**
  * The subset of {@link wildcardShapeError} that applies to a POLICY-RULE

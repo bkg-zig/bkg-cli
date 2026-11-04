@@ -120,7 +120,7 @@ const buildMetadata = (
   }
   if (type === "eysho") {
     return {
-      authMode: detectEyshoAuthMode(value),
+      authMode: detectEyshoAuthMode(),
     } as Prisma.InputJsonValue;
   }
   return Prisma.JsonNull;

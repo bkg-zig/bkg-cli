@@ -11,7 +11,9 @@ const parseCatalog = (body: unknown): Array<{ id: string; label?: string }> => {
   return data
     .filter(
       (x): x is { id: string; display_name?: string } =>
-        !!x && typeof x === "object" && typeof (x as any).id === "string",
+        !!x &&
+        typeof x === "object" &&
+        typeof (x as { id?: unknown }).id === "string",
     )
     .map((x) => ({
       id: x.id,
