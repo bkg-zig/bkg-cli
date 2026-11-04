@@ -68,11 +68,40 @@ const TELEMETRY_FLUSH_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// Cap on closing the database pool — cosmetic cleanliness, never worth a hang.
 const POOL_CLOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// Default data directory for the CA and persistent state.
+///
+/// `/app/data` is the container path (the image passes it explicitly via
+/// `--data-dir`, and it is the volume mount). The existence check alone is
+/// not enough: a host that happens to have an unrelated, non-writable
+/// `/app/data` (root-owned, e.g. another app's state directory) would make
+/// the gateway pick a directory it cannot write, and the first CA write fails
+/// with `Permission denied`. Probe for writability instead — permissions bits
+/// lie for directories owned by another user.
 fn default_data_dir() -> &'static str {
-    if cfg!(target_os = "linux") && Path::new("/app/data").exists() {
+    if cfg!(target_os = "linux")
+        && Path::new("/app/data").is_dir()
+        && dir_is_writable(Path::new("/app/data"))
+    {
         "/app/data"
     } else {
         "~/.onecli"
+    }
+}
+
+/// Whether the current process can create a file in `dir`.
+fn dir_is_writable(dir: &Path) -> bool {
+    let probe = dir.join(".onecli-write-probe");
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&probe)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
     }
 }
 
@@ -450,6 +479,21 @@ fn check_cloud_startup_env(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_data_dir_is_writable() {
+        // The default data dir must be writable BY THIS PROCESS. A host with
+        // an unrelated, non-writable /app/data (root-owned, e.g. another
+        // app's state directory) used to win the /app/data branch and killed
+        // the gateway with "Permission denied" on its first CA write.
+        let dir = expand_tilde(Path::new(default_data_dir()));
+        std::fs::create_dir_all(&dir).expect("create the default data dir");
+        assert!(
+            dir_is_writable(&dir),
+            "default data dir {} is not writable",
+            dir.display()
+        );
+    }
 
     #[test]
     fn database_url_from_parts_is_table_driven() {
