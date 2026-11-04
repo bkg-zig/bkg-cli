@@ -32,10 +32,19 @@ The `railway/*.json` Docker build paths use the same Dockerfiles as the
 self-hosted Compose stack. Keep the Root Directory `/` even for the Rust
 gateway: its Dockerfile builds from the full repository context.
 
+The web config uses the repository's Dockerfile, which starts Next.js in
+standalone mode (`node apps/web/server.js`). Do not override it with `next
+start`: this app sets `output: "standalone"`, and Next.js warns that `next
+start` is unsupported for that output mode.
+
 ## Railway setup
 
 1. Create Railway PostgreSQL. Provide its `DATABASE_URL` to the API, web,
-gateway, and the migration job.
+gateway, and the migration job. **The web service needs this at runtime too**:
+its server-rendered account/dashboard code uses Prisma. Supplying the URL only
+to the API, or only during the web image build, is insufficient. In the web
+service's Railway Variables, add `DATABASE_URL` as a reference to the PostgreSQL
+service's `DATABASE_URL` (select the actual database service name in Railway).
 2. Add the Railway services for web, API, and gateway, using the configs above.
 Set ports to `10254`, `10256`, and `10255` respectively if Railway does not
 supply compatible `PORT` values. The API image reads `PORT`; gateway needs

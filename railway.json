@@ -1,11 +1,10 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "RAILPACK",
-    "buildCommand": "pnpm install --frozen-lockfile && pnpm --filter @onecli/db generate && DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build pnpm --filter @onecli/web build"
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "docker/web.Dockerfile"
   },
   "deploy": {
-    "startCommand": "pnpm --filter @onecli/web start --hostname 0.0.0.0 --port $PORT",
     "healthcheckPath": "/healthz",
     "restartPolicyType": "ON_FAILURE"
   }
