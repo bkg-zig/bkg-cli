@@ -1,11 +1,10 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "RAILPACK",
-    "buildCommand": "cargo build --release --locked"
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "docker/gateway.Dockerfile"
   },
   "deploy": {
-    "startCommand": "./target/release/onecli-gateway --port $PORT --data-dir /app/data",
     "healthcheckPath": "/healthz",
     "restartPolicyType": "ON_FAILURE"
   }
