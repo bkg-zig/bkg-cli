@@ -4,7 +4,7 @@ set -euo pipefail
 # OneCLI Local Build Script
 # Builds all images from source with the current code
 
-REPO_ROOT="/srv/kirocrew/source/bkg-one-cli"
+REPO_ROOT="/srv/kirocrew/source/bkg-cli"
 cd "$REPO_ROOT"
 
 echo "=== OneCLI Local Build ==="
