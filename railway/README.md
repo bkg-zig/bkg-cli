@@ -1,118 +1,119 @@
-# Railway deployment for OneCLI's Docker-based self-host stack
+# Railway deployment for OneCLI
 
-I read [`docs/self-hosting.md`](../docs/self-hosting.md). Its raw Compose setup
-creates `docker/.env` with random `SECRET_ENCRYPTION_KEY`,
-`GATEWAY_INTERNAL_SECRET`, and `BETTER_AUTH_SECRET`, sets
-`COMPOSE_PROFILES=runner`, then runs `docker compose up -d --wait` from the
-`docker/` directory.
+## Important: Railway does not run `docker/docker-compose.yml`
 
-Railway does **not** run that Compose command or consume `docker/.env`. Create
-one Railway service per long-running container, use the Dockerfile configs
-below, and add the environment variables separately in Railway. All Dockerfiles
-expect the repository root as the build context, so set each service's Root
-Directory to `/` and configure the specified Config-as-code file path.
+Railway cannot deploy a Compose file as one coordinated stack. Setting
+`railway.json` to a Dockerfile does not make Railway read Compose, apply its
+profiles, create its networks, mount its volumes, or honor `depends_on`.
+Railway needs a separately configured service for each supported long-running
+container. The configuration files in this directory select the matching
+Dockerfile; they are **not** a Compose installer or an automatic Railway
+project bootstrapper.
 
-## Dockerfiles and Railway configs
+The raw self-host path in [`docs/self-hosting.md`](../docs/self-hosting.md)
+remains the supported one-command full-stack installation:
 
-| Compose service / image | Railway config file | Dockerfile | Deployment guidance |
+```sh
+git clone https://github.com/onecli/onecli.git && cd onecli/docker
+cat > .env <<EOF
+SECRET_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)
+GATEWAY_INTERNAL_SECRET=$(head -c 32 /dev/urandom | base64)
+BETTER_AUTH_SECRET=$(head -c 32 /dev/urandom | base64)
+COMPOSE_PROFILES=runner
+EOF
+chmod 600 .env
+docker compose up -d --wait
+```
+
+That Compose command runs on a Docker host you control; running it inside an
+ordinary Railway service is not a supported alternative.
+
+## Compose-to-Railway map
+
+For each Railway application service, connect this repository, set the Root
+Directory to `/`, and select the Config-as-code file path below. The Dockerfiles
+use the repository root as their build context. Create services individually;
+Railway will not read this table or create them automatically.
+
+| Compose entry | Railway setup | Config | Required runtime considerations |
 | --- | --- | --- | --- |
-| `web` | `/railway.json` | `docker/web.Dockerfile` | Long-running dashboard; public domain, port `10254`, health `/healthz`. |
-| `api` | `/railway/api.json` | `docker/api.Dockerfile` | Long-running API; port `10256`, health `/v1/health`. |
-| `gateway` | `/railway/gateway.json` | `docker/gateway.Dockerfile` | Long-running raw TCP CONNECT proxy; port `10255`, persistent volume at `/app/data`. HTTP domain alone is not enough. |
-| `channel-adapter` | `/railway/channel-adapter.json` | `docker/channel-adapter.Dockerfile` | Optional outbound Slack worker; no public port. |
-| `migrations` | `/railway/migrations.json` | `docker/migrations.Dockerfile` | One-shot job, not an always-on server. Run against the same Postgres before the API rollout. |
-| `runner` | `/railway/runner.json` | `docker/runner.Dockerfile` | Build config only: a normal Railway service cannot provide the local Docker socket and fenced sandbox network this runner requires. Run it on a Docker host you control. |
-| `ssh-terminator` | `/railway/ssh-terminator.json` | `docker/ssh-terminator.Dockerfile` | Build config only for Docker mode: requires Docker socket and raw SSH TCP. Run with the self-host Docker setup or supported Kubernetes backend, not as an ordinary Railway service. |
-| Agent sandbox base image | `/railway/agent-base.json` | `docker/agent-base.Dockerfile` | Image build only; not a long-running Railway service. |
-| Agent sandbox image | `/railway/agent.json` | `docker/agent.Dockerfile` | Image build only; requires `AGENT_BASE_IMAGE` to reference the built base image. The external runner launches it per sandbox. |
-| `postgres` | — | `postgres:18-alpine` in Compose | Use Railway PostgreSQL and reference its `DATABASE_URL`; don't create a second app container for it. |
-| `redis` | — | `redis:7-alpine` in dev Compose only | Not needed for the unlicensed single-instance self-host. Cloud mode has additional requirements; Redis alone does not configure cloud mode. |
+| `postgres` | Use Railway PostgreSQL; reference its `DATABASE_URL` from web, API, gateway, and migration job. | Managed database, no repo config | Do not use the sample Compose database password `onecli` for a public deployment. |
+| `migrations` | Run as a one-off job before deploying/releasing the API. | `/railway/migrations.json` | Must use the same `DATABASE_URL` as the application. Do not run it as an always-on server or concurrently from each API replica. |
+| `api` | Long-running Railway service. | `/railway/api.json` | `PORT=10256` if not set by Railway; health path `/v1/health`. |
+| `web` | Long-running public dashboard service. | `/railway.json` | **Set `DATABASE_URL` at runtime on this service too.** The server-rendered dashboard uses Prisma. This config's Dockerfile starts Next standalone via `node apps/web/server.js`; do not override it with `next start`. Health path `/healthz`. |
+| `gateway` | Long-running service with raw TCP proxy exposure and persistent volume mounted at `/app/data`. | `/railway/gateway.json` | Gateway listens on TCP `10255`; an HTTP domain alone is not the CONNECT proxy. Persist `/app/data` or its generated CA/state is lost on replacement. |
+| `runner` | Not deployable as the self-host Docker runner on standard Railway. Run on a Docker host you control, or use the documented Kubernetes install. | `/railway/runner.json` is only a Dockerfile/build description | Compose mounts `/var/run/docker.sock` and relies on a fenced internal sandbox network. Railway does not provide the host Docker socket or Compose network. |
+| `ssh-terminator` | Docker backend must run beside the Docker host with the runner; supported Kubernetes setup is another option. | `/railway/ssh-terminator.json` is only a Dockerfile/build description | Compose mounts the Docker socket. Also needs an externally reachable SSH/TCP listener and generated SSH key material. |
+| `channel-adapter` | Optional long-running outbound worker; add as a separate Railway service only if Slack is configured. | `/railway/channel-adapter.json` | No public HTTP domain is needed. It needs `CHANNEL_ADAPTER_TOKEN` matching the API and private API/gateway service addresses. |
+| Agent sandbox base | Build/publish an image; not a persistent service. | `/railway/agent-base.json` | Required base image for the agent image. |
+| Agent sandbox | Build/publish an image; the runner starts one per hosted sandbox. | `/railway/agent.json` | Build after the base image and configure `AGENT_BASE_IMAGE` to its published image. |
+| `redis` | Not part of the production Compose self-host default. | No config | The dev Compose file uses Redis for cloud-edition development. Don't enable `REDIS_HOST` on an unlicensed self-host; Redis-backed HA requires the relevant entitlement. |
 
-The `railway/*.json` Docker build paths use the same Dockerfiles as the
-self-hosted Compose stack. Keep the Root Directory `/` even for the Rust
-gateway: its Dockerfile builds from the full repository context.
+## Railway setup order
 
-The web config uses the repository's Dockerfile, which starts Next.js in
-standalone mode (`node apps/web/server.js`). Do not override it with `next
-start`: this app sets `output: "standalone"`, and Next.js warns that `next
-start` is unsupported for that output mode.
+1. Create Railway PostgreSQL. Reference `DATABASE_URL` from it on the **web,
+   API, gateway and migration job**. The web service's runtime variable is
+   required even though its Docker image uses a dummy database URL only during
+   static build steps.
+2. Add the API, web and gateway as separate services with the config paths in
+the table. Configure Railway private networking for internal calls and add
+public domains/TCP exposure only where required. Use service private hostnames
+for `API_INTERNAL_URL`, `INTERNAL_API_URL`, `GATEWAY_INTERNAL_URL`, and the
+other internal URLs; Compose names like `api` and `gateway` are not guaranteed
+to be Railway hostnames.
+3. Run the migrations image as a one-off job against the production database
+before the API rollout. Compose's migration dependency ordering does not carry
+over to Railway. If the Railway workflow cannot run a one-off image, use a
+controlled CI/deployment job with the Railway database reference and gate the
+API rollout on success.
+4. Add the channel adapter only if used. Build and publish the agent base then
+the agent image if a compatible external runner will launch it.
+5. Run the runner and Docker-backend SSH terminator on a Docker host you
+control. Never expose `/var/run/docker.sock` over a network.
 
-## Railway setup
+## Environment and secrets
 
-1. Create Railway PostgreSQL. Provide its `DATABASE_URL` to the API, web,
-gateway, and the migration job. **The web service needs this at runtime too**:
-its server-rendered account/dashboard code uses Prisma. Supplying the URL only
-to the API, or only during the web image build, is insufficient. In the web
-service's Railway Variables, add `DATABASE_URL` as a reference to the PostgreSQL
-service's `DATABASE_URL` (select the actual database service name in Railway).
-2. Add the Railway services for web, API, and gateway, using the configs above.
-Set ports to `10254`, `10256`, and `10255` respectively if Railway does not
-supply compatible `PORT` values. The API image reads `PORT`; gateway needs
-`--port 10255` and a matching Railway TCP listener.
-3. Run the migrations image as a one-off job against the same database before
-releasing API changes. The Compose stack orders this automatically; separate
-Railway services do not. Don't start a migration process as a continuously
-restarting web service or run it concurrently from every API replica.
-4. Add the optional channel-adapter only if Slack is configured.
-5. Build/publish the agent base image, then the agent image with
-`AGENT_BASE_IMAGE` pointing at the published base. Configure the external
-runner's `RUNNER_AGENT_IMAGE` to that published image.
-
-If your Railway plan/workflow cannot run the migrations image as a one-off job,
-run it from a controlled CI/deployment job with Railway's `DATABASE_URL` and
-block the API rollout until it exits successfully.
-
-## Secrets and settings
-
-The three values in the self-hosting raw Compose example are the required base
-secrets. Generate them locally (don't commit them), or run the repo's generator
-for the additional optional service tokens too:
+The raw Compose example generates the three minimum secrets locally. The
+repo's generator can make the required keys plus service tokens:
 
 ```sh
 node scripts/railway-secrets.mjs
 ```
 
-The generator prints random values to your terminal. It does not configure
-Railway or save the values. Put the **same value** on each listed service, and
-keep the values unchanged for redeploys:
+It prints values to stdout; it does not create Railway variables or persist
+them. Copy each value to Railway's secret variables, keep coupled services on
+the same value, and save the output securely for recovery. Never regenerate
+`SECRET_ENCRYPTION_KEY` after storing encrypted credentials.
 
-- `SECRET_ENCRYPTION_KEY`: web, API, and gateway. Back this up securely; losing
-  or replacing it makes previously encrypted credentials unreadable.
+- `SECRET_ENCRYPTION_KEY`: web, API, gateway.
 - `GATEWAY_INTERNAL_SECRET`: API and gateway.
-- `BETTER_AUTH_SECRET`: web and API (also gateway as passed through by Compose).
-- `RUNNER_TOKEN`: API and the external runner, same value. Required if you
-  actually enable hosted agents; the short raw Compose example's
-  `COMPOSE_PROFILES=runner` does not itself generate this token.
-- `RUNNER_SESSION_KEY`: external runner, when using session resumption.
-- `CHANNEL_ADAPTER_TOKEN`: API and channel-adapter when enabled.
+- `BETTER_AUTH_SECRET`: web and API.
+- `RUNNER_TOKEN`: API and external runner; same value, if using hosted agents.
+- `RUNNER_SESSION_KEY`: external runner, if using session resumption.
+- `CHANNEL_ADAPTER_TOKEN`: API and channel adapter, same value, if enabled.
+- SSH: a working SSH deployment additionally needs the API's `SSH_CA_PRIVATE_KEY`,
+  the terminator's `TERMINATOR_CA_PUBLIC_KEY`, `TERMINATOR_HOST_KEY`, and the
+  shared `SSH_TERMINATOR_SECRET`. Generate and store those using the supported
+  self-host setup; `scripts/railway-secrets.mjs` does not mint SSH key pairs.
 
-Set `ONECLI_EXTERNAL_URL` to the public dashboard URL on web, API, and gateway.
-Set `API_URL` to the API's public HTTPS URL. Set `GATEWAY_API_URL` and
-`ONECLI_AGENT_PROXY_ADDRESS` to the gateway addresses reachable by the
-browser and agent sandboxes. Set `INTERNAL_API_URL` for the gateway and
-`API_INTERNAL_URL` for web to the API's Railway private hostname. Set
-`GATEWAY_INTERNAL_URL` on web and API to the gateway private hostname. Verify
-actual Railway private hostnames and ports in your project; the Compose service
-names `api` and `gateway` won't necessarily be Railway hostnames.
+Set `ONECLI_EXTERNAL_URL` to the public dashboard URL on web, API, and gateway;
+set `API_URL` to the public API origin. Configure `GATEWAY_API_URL` and
+`ONECLI_AGENT_PROXY_ADDRESS` to the gateway origins reachable by the dashboard
+and agent containers. Set `API_INTERNAL_URL` and `INTERNAL_API_URL` to the API's
+private hostname as appropriate, and `GATEWAY_INTERNAL_URL` to the gateway's
+private hostname on API and web. Verify actual Railway-generated hostnames and
+ports in your project.
 
-Railway services don't inherit `COMPOSE_PROFILES`; in this split-service setup
-add `runner` and `channel-adapter` as separate services only if their runtime
-requirements can be met. `COMPOSE_PROFILES=runner` is a Docker Compose setting,
-not a Railway variable that starts a Compose profile.
+## What Railway cannot reproduce from Compose
 
-## Limits compared with the self-host Docker Compose stack
-
-Railway service configs build and run the Dockerfiles; they do not reproduce the
-whole Compose topology. In particular, standard Railway services do not mount
-the host's `/var/run/docker.sock`, create the private internal sandbox network,
-or automatically wire service dependencies and migration ordering. Therefore
-the Docker-backend runner and SSH terminator cannot provide hosted sandboxes on
-Railway as ordinary services. Run those on a compatible Docker host, or use
-the supported Kubernetes deployment described in the self-hosting guide.
-
-The gateway handles raw TCP CONNECT, and the gateway CA/state is kept under
-`/app/data`. Before production, verify your Railway TCP proxy configuration
-and attach persistent storage there. If TCP forwarding or persistent volumes
-aren't available for your Railway setup, run the gateway on infrastructure
-that supports them. These constraints mean the Railway configs are not a
-one-command replacement for `docker compose up -d --wait`.
+Railway automatically provides private service networking, but it does not
+recreate the Compose-defined `onecli` and `sandboxes` networks, Compose volume
+lifecycle, `depends_on` startup ordering, or Compose profiles. Configure
+variables, service networking, persistent storage, and migration sequencing
+in Railway itself. Most importantly, standard Railway services do not provide
+the local Docker socket and isolated network needed by the hosted-agent Docker
+runner. Therefore these Dockerfile configs describe/build all of the Compose
+images, but **cannot turn the entire Compose application—including hosted
+sandbox execution—into a working Railway deployment**. Use Docker Compose on a
+Docker-capable host or the project's supported Kubernetes deployment for the
+full hosted-agent stack.
