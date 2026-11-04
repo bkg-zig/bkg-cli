@@ -122,7 +122,7 @@ export const SecretsContent = ({
       setPrefill({
         type: "eysho",
         hostPattern: "api.eysho.info",
-        name: "Eysho Token",
+        name: "Custom Token",
       });
       setCreateOpen(true);
       router.replace(window.location.pathname, { scroll: false });

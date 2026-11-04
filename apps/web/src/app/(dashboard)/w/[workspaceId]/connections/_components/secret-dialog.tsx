@@ -158,11 +158,11 @@ const SECRET_TYPE_OPTIONS: SecretTypeOption[] = [
   },
   {
     value: "eysho",
-    label: "Eysho",
+    label: "Custom",
     description: "Inject an API key for requests to api.eysho.info",
     icon: <OpenAIIcon className="size-5" />,
     hostDefault: "api.eysho.info",
-    nameDefault: "Eysho Token",
+    nameDefault: "Custom Token",
   },
   {
     value: "generic",
@@ -784,7 +784,7 @@ export const SecretDialog = ({
                               type === "eysho" &&
                               looksLikeOpenaiKey(pasted)
                             ) {
-                              setName("Eysho API Key");
+                              setName("Custom API Key");
                             }
                           }}
                         />

@@ -290,7 +290,7 @@ export const CreateAgentDialog = ({
       <SecretDialog
         open={keyDialogOpen}
         onOpenChange={setKeyDialogOpen}
-        allowedTypes={["anthropic", "openai"]}
+        allowedTypes={["anthropic", "openai", "eysho"]}
         onSaved={() => {
           setHasLlmKey(true);
           toast.success("LLM key added and attached to your agent");

@@ -67,11 +67,11 @@ export const keyFormatWarning = (
     );
   }
 
-  // Eysho is OpenAI-compatible, so it uses the same key format as OpenAI
+  // Custom (Eysho) is OpenAI-compatible, so it uses the same key format as OpenAI
   if (type === "eysho" || type === "openai") {
     if (looksLikeOpenaiKey(value)) return null;
     if (value.startsWith("sk-ant-")) {
-      return "This looks like an Anthropic key, not an Eysho key.";
+      return "This looks like an Anthropic key, not a Custom key.";
     }
     if (isOpenaiAdminKey(value)) {
       return (

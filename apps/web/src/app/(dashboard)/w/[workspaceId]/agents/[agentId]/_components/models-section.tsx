@@ -83,7 +83,7 @@ export const ModelsSection = ({ agentId }: { agentId: string }) => {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onSaved={onSaved}
-        allowedTypes={["anthropic", "openai"]}
+        allowedTypes={["anthropic", "openai", "eysho"]}
       />
       {/* Edit door: replace the stored value (write-only) or rename. Keyed so
           a different row always mounts a fresh form; the row survives the

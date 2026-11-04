@@ -345,7 +345,7 @@ export const DirectThreadSection = () => {
         open={keyDialogOpen}
         onOpenChange={setKeyDialogOpen}
         onSaved={onKeySaved}
-        allowedTypes={["anthropic", "openai"]}
+        allowedTypes={["anthropic", "openai", "eysho"]}
       />
 
       {stream.status === "reconnecting" && (

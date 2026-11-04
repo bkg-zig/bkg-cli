@@ -301,7 +301,7 @@ export const NewHostedAgentDialog = ({
           setKeyFor(null);
           void afterKey(keyFor);
         }}
-        allowedTypes={["anthropic", "openai"]}
+        allowedTypes={["anthropic", "openai", "eysho"]}
         onSaved={() =>
           toast.success("LLM key added and attached to your agent")
         }
