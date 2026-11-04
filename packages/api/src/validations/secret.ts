@@ -269,7 +269,7 @@ const opDisplaySchema = z
 export const createSecretSchema = z
   .object({
     name: z.string().trim().min(1).max(255),
-    type: z.enum(["anthropic", "openai", "generic"]),
+    type: z.enum(["anthropic", "openai", "eysho", "generic"]),
     valueSource: z.enum(valueSources).optional(),
     value: z.string().max(10000).optional(),
     opRef: opRefSchema.optional(),
@@ -505,6 +505,31 @@ export const parseOpenaiMetadata = (
 
 export const detectOpenaiAuthMode = (value: string): OpenaiAuthMode =>
   parseOpenaiOAuthJson(value) !== null ? "oauth" : "api-key";
+
+export const eyshoAuthModes = ["api-key"] as const;
+export type EyshoAuthMode = (typeof eyshoAuthModes)[number];
+
+export interface EyshoSecretMetadata {
+  authMode: EyshoAuthMode;
+}
+
+export const parseEyshoMetadata = (
+  metadata: unknown,
+): EyshoSecretMetadata | null => {
+  if (
+    metadata &&
+    typeof metadata === "object" &&
+    "authMode" in metadata &&
+    eyshoAuthModes.includes(
+      (metadata as { authMode: string }).authMode as EyshoAuthMode,
+    )
+  ) {
+    return metadata as EyshoSecretMetadata;
+  }
+  return null;
+};
+
+export const detectEyshoAuthMode = (value: string): EyshoAuthMode => "api-key";
 
 /**
  * The subset of {@link wildcardShapeError} that applies to a POLICY-RULE

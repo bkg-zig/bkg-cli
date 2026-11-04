@@ -84,7 +84,7 @@ import {
   parseOpenaiAuthJson,
 } from "@onecli/api/validations/secret";
 
-type SecretType = "anthropic" | "openai" | "generic";
+type SecretType = "anthropic" | "openai" | "eysho" | "generic";
 
 /** The docs guide behind the Anthropic dialog's "Need help?" link. */
 const ANTHROPIC_SETUP_GUIDE_URL =
@@ -155,6 +155,14 @@ const SECRET_TYPE_OPTIONS: SecretTypeOption[] = [
     icon: <OpenAIIcon className="size-5" />,
     hostDefault: "api.openai.com",
     nameDefault: "OpenAI Token",
+  },
+  {
+    value: "eysho",
+    label: "Eysho",
+    description: "Inject an API key for requests to api.eysho.info",
+    icon: <OpenAIIcon className="size-5" />,
+    hostDefault: "api.eysho.info",
+    nameDefault: "Eysho Token",
   },
   {
     value: "generic",
@@ -743,7 +751,7 @@ export const SecretDialog = ({
                           placeholder={
                             type === "anthropic"
                               ? "sk-ant-oat01-… or sk-ant-api03-…"
-                              : type === "openai"
+                              : type === "openai" || type === "eysho"
                                 ? "sk-proj-…"
                                 : "Paste your API key / Secret"
                           }
@@ -771,6 +779,12 @@ export const SecretDialog = ({
                               looksLikeOpenaiKey(pasted)
                             ) {
                               setName("OpenAI API Key");
+                            }
+                            if (
+                              type === "eysho" &&
+                              looksLikeOpenaiKey(pasted)
+                            ) {
+                              setName("Eysho API Key");
                             }
                           }}
                         />
@@ -810,7 +824,7 @@ export const SecretDialog = ({
                                 Claude Console
                               </a>
                             </>
-                          ) : type === "openai" ? (
+                          ) : type === "openai" || type === "eysho" ? (
                             <>
                               Paste your API key, or{" "}
                               <button

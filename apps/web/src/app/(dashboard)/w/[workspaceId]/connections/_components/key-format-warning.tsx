@@ -17,7 +17,7 @@ const prefixClassName = "text-[11px]";
  * Format hints only; they never block saving.
  */
 export const keyFormatWarning = (
-  type: "anthropic" | "openai",
+  type: "anthropic" | "openai" | "eysho",
   raw: string,
 ): ReactNode => {
   const value = raw.trim();
@@ -63,6 +63,33 @@ export const keyFormatWarning = (
         Subscription tokens start with{" "}
         <code className={prefixClassName}>sk-ant-oat</code>, API keys with{" "}
         <code className={prefixClassName}>sk-ant-</code>.
+      </>
+    );
+  }
+
+  // Eysho is OpenAI-compatible, so it uses the same key format as OpenAI
+  if (type === "eysho" || type === "openai") {
+    if (looksLikeOpenaiKey(value)) return null;
+    if (value.startsWith("sk-ant-")) {
+      return "This looks like an Anthropic key, not an Eysho key.";
+    }
+    if (isOpenaiAdminKey(value)) {
+      return (
+        <>
+          This looks like an Admin API key, which can{"\u2019"}t call models.
+          Use a project key (<code className={prefixClassName}>sk-proj-…</code>)
+          instead.
+        </>
+      );
+    }
+    if (value.startsWith("sk-")) {
+      return "This key looks incomplete. Make sure you copied all of it.";
+    }
+    return (
+      <>
+        Keys typically start with{" "}
+        <code className={prefixClassName}>sk-proj-</code> or{" "}
+        <code className={prefixClassName}>sk-</code>.
       </>
     );
   }

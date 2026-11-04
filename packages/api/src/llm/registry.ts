@@ -6,6 +6,7 @@ import type {
 } from "./types";
 import { anthropic } from "./anthropic";
 import { openai } from "./openai";
+import { eysho } from "./eysho";
 
 // SERVER-ONLY (see `./types`): this registry reaches outbound fetch logic and
 // decrypted credentials. Client code gets its data from the models endpoint.
@@ -19,6 +20,7 @@ import { openai } from "./openai";
 export const LLM_PROVIDERS: Record<LlmProviderId, LlmProvider> = {
   anthropic,
   openai,
+  eysho,
 };
 
 /** The secret types this registry can serve — derived, never hand-listed. */

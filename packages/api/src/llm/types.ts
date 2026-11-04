@@ -17,7 +17,7 @@ import type { AgentEffort } from "@onecli/agent-protocol";
  * key names its own provider with no mapping table in between — which is what
  * makes "the key decides the model" a lookup rather than a negotiation.
  */
-export type LlmProviderId = "anthropic" | "openai";
+export type LlmProviderId = "anthropic" | "openai" | "eysho";
 
 /**
  * How a stored LLM credential authenticates, from `Secret.metadata.authMode`:

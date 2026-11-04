@@ -8,6 +8,7 @@ import { scopeWhere, scopeCreate, scopeOwnership } from "./resource-scope";
 import {
   detectAnthropicAuthMode,
   detectOpenaiAuthMode,
+  detectEyshoAuthMode,
   isHeaderInjection,
   isParamInjection,
   isPathInjection,
@@ -39,6 +40,7 @@ const normalizeOpenaiValue = (
 const SECRET_TYPE_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
+  eysho: "Eysho",
   generic: "Custom",
 };
 
@@ -116,6 +118,11 @@ const buildMetadata = (
       ...(parsed ? { accountId: parsed.tokens.account_id ?? null } : {}),
     } as Prisma.InputJsonValue;
   }
+  if (type === "eysho") {
+    return {
+      authMode: detectEyshoAuthMode(value),
+    } as Prisma.InputJsonValue;
+  }
   return Prisma.JsonNull;
 };
 
@@ -125,7 +132,8 @@ const buildOnePasswordMetadata = (
 ): Prisma.InputJsonValue | typeof Prisma.JsonNull => {
   const meta: Record<string, unknown> = {};
   // LLM keys resolved from 1Password are always API-key mode (no value to inspect, no OAuth).
-  if (type === "anthropic" || type === "openai") meta.authMode = "api-key";
+  if (type === "anthropic" || type === "openai" || type === "eysho")
+    meta.authMode = "api-key";
   if (opDisplay) meta.opDisplay = opDisplay;
   return Object.keys(meta).length > 0
     ? (meta as Prisma.InputJsonValue)
@@ -372,6 +380,7 @@ export const createSecret = async (
     // LLM keys from 1Password are treated as plain API keys on their fixed host.
     if (input.type === "anthropic") hostPattern = "api.anthropic.com";
     if (input.type === "openai") hostPattern = "api.openai.com";
+    if (input.type === "eysho") hostPattern = "api.eysho.info";
 
     const opSecret = await db.secret.create({
       data: {
@@ -412,6 +421,9 @@ export const createSecret = async (
     const normalized = normalizeOpenaiValue(value);
     value = normalized.value;
     hostPattern = normalized.hostPattern;
+  }
+  if (input.type === "eysho") {
+    hostPattern = "api.eysho.info";
   }
 
   const secret = await db.secret.create({
@@ -493,6 +505,7 @@ export const updateSecret = async (
     data.opRef = input.opRef;
     if (secret.type === "anthropic") data.hostPattern = "api.anthropic.com";
     if (secret.type === "openai") data.hostPattern = "api.openai.com";
+    if (secret.type === "eysho") data.hostPattern = "api.eysho.info";
     data.metadata = buildOnePasswordMetadata(secret.type, input.opDisplay);
   } else if (input.value !== undefined) {
     let value = input.value.trim();
@@ -504,12 +517,19 @@ export const updateSecret = async (
       value = normalized.value;
       data.hostPattern = normalized.hostPattern;
     }
+    if (secret.type === "eysho") {
+      data.hostPattern = "api.eysho.info";
+    }
 
     data.valueSource = "inline";
     data.encryptedValue = await getCrypto().encrypt(value);
     data.opRef = null;
 
-    if (secret.type === "anthropic" || secret.type === "openai") {
+    if (
+      secret.type === "anthropic" ||
+      secret.type === "openai" ||
+      secret.type === "eysho"
+    ) {
       data.metadata = buildMetadata(secret.type, value);
     }
   }
