@@ -380,6 +380,10 @@ var_set gateway RAILWAY_RUN_UID "0"
 var_delete gateway BETTER_AUTH_COOKIE_DOMAIN "host-only cookie on the dashboard's host"
 require_secret_ref gateway SECRET_ENCRYPTION_KEY
 require_secret_ref gateway GATEWAY_INTERNAL_SECRET
+# The gateway verifies the dashboard's session cookie (context::auth) — it
+# needs the SAME signing secret as the api, or every browser call through
+# /gw is rejected with "session auth: BETTER_AUTH_SECRET not set".
+require_secret_ref gateway BETTER_AUTH_SECRET
 
 var_set migrations PORT "10256"
 
