@@ -86,6 +86,19 @@ describe("SecretDialog provider guidance", () => {
     ).toHaveAttribute("href", "https://platform.claude.com/settings/keys");
   });
 
+  it("names the Eysho host in the Custom dialog — never OpenAI's", async () => {
+    // The Custom provider talks to api.eysho.info. A dialog that fell
+    // through to the OpenAI wording told the user the key goes to
+    // api.openai.com — the key would have been injected into the wrong host.
+    await renderDialog({ defaultType: "eysho" });
+    expect(
+      screen.getByText(
+        "Your key is encrypted and injected into requests to api.eysho.info.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toHaveValue("Custom Token");
+  });
+
   it("hands focus to the value input when the name arrives pre-filled", async () => {
     await renderDialog({ defaultType: "anthropic" });
     await waitFor(() =>

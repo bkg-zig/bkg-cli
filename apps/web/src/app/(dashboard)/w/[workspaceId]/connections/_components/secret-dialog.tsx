@@ -539,7 +539,9 @@ export const SecretDialog = ({
                     ? "Update the secret\u2019s configuration. Leave the value field empty to keep the current value."
                     : type === "anthropic"
                       ? "Your token or key is encrypted and injected into requests to api.anthropic.com."
-                      : `Inject credentials into requests to ${openaiMode === "codex" ? "chatgpt.com" : "api.openai.com"}.`}
+                      : type === "eysho"
+                        ? "Your key is encrypted and injected into requests to api.eysho.info."
+                        : `Inject credentials into requests to ${openaiMode === "codex" ? "chatgpt.com" : "api.openai.com"}.`}
               </DialogDescription>
               {type === "openai" &&
                 !fromOnePassword &&

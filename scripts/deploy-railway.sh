@@ -287,12 +287,16 @@ var_set() {
 }
 
 var_delete() {
-    local service="$1" name="$2"
+    local service="$1" name="$2" reason="${3:-}"
     if [[ -z "$(var_get "$service" "$name")" ]]; then
         ok "  $service/$name not set (nothing to delete)"
         return 0
     fi
-    warn "  deleting $service/$name (host-only cookies are required across the Railway domains)"
+    if [[ -n "$reason" ]]; then
+        warn "  deleting $service/$name ($reason)"
+    else
+        warn "  deleting $service/$name"
+    fi
     if [[ "$DRY_RUN" -eq 1 ]]; then
         log "(dry-run) railway variable delete $name --service $service"
         return 0
@@ -326,8 +330,8 @@ var_set api PORT "${SERVICE_PORT[api]}"
 # No API_URL / GATEWAY_API_URL: on Railway the browser must talk to the
 # dashboard's OWN origin (the web proxies /v1 + /auth + /gw), otherwise the
 # session cookie is a third-party cookie that SameSite=Lax never sends.
-var_delete api API_URL
-var_delete api GATEWAY_API_URL
+var_delete api API_URL "the browser talks to the dashboard's own origin"
+var_delete api GATEWAY_API_URL "the gateway is proxied under /gw"
 var_set api ONECLI_TRUSTED_ORIGINS "$WEB_URL"
 var_set api ONECLI_API_PORT "${SERVICE_PORT[api]}"
 var_set api ONECLI_GATEWAY_PORT "${SERVICE_PORT[gateway]}"
@@ -335,7 +339,7 @@ var_set api GATEWAY_INTERNAL_URL "http://gateway.railway.internal:${SERVICE_PORT
 var_set api API_INTERNAL_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
 var_set api INTERNAL_API_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
 var_set api ONECLI_AGENT_PROXY_ADDRESS "gateway.railway.internal:${SERVICE_PORT[gateway]}"
-var_delete api BETTER_AUTH_COOKIE_DOMAIN
+var_delete api BETTER_AUTH_COOKIE_DOMAIN "host-only cookie on the dashboard's host"
 require_secret_ref api BETTER_AUTH_SECRET
 require_secret_ref api SECRET_ENCRYPTION_KEY
 require_secret_ref api GATEWAY_INTERNAL_SECRET
@@ -351,12 +355,12 @@ var_set bkg-one-cli ONECLI_SINGLE_ORIGIN_PROXY "1"
 var_set bkg-one-cli INTERNAL_API_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
 var_set bkg-one-cli API_INTERNAL_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
 var_set bkg-one-cli GATEWAY_INTERNAL_URL "http://gateway.railway.internal:${SERVICE_PORT[gateway]}"
-var_delete bkg-one-cli API_URL
-var_delete bkg-one-cli GATEWAY_API_URL
+var_delete bkg-one-cli API_URL "single origin: the web proxies /v1"
+var_delete bkg-one-cli GATEWAY_API_URL "single origin: the web proxies /gw"
 var_set bkg-one-cli ONECLI_TRUSTED_ORIGINS "$WEB_URL"
 var_set bkg-one-cli ONECLI_API_PORT "${SERVICE_PORT[api]}"
 var_set bkg-one-cli ONECLI_GATEWAY_PORT "${SERVICE_PORT[gateway]}"
-var_delete bkg-one-cli BETTER_AUTH_COOKIE_DOMAIN
+var_delete bkg-one-cli BETTER_AUTH_COOKIE_DOMAIN "host-only cookie on the dashboard's host"
 require_secret_ref bkg-one-cli BETTER_AUTH_SECRET
 require_secret_ref bkg-one-cli SECRET_ENCRYPTION_KEY
 
@@ -364,8 +368,8 @@ set_vars_common gateway
 var_set gateway PORT "${SERVICE_PORT[gateway]}"
 var_set gateway INTERNAL_API_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
 var_set gateway API_INTERNAL_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
-var_delete gateway API_URL
-var_delete gateway GATEWAY_API_URL
+var_delete gateway API_URL "the gateway calls the api over the private network"
+var_delete gateway GATEWAY_API_URL "the gateway is reached over the private network"
 var_set gateway GATEWAY_ALLOW_PRIVATE_DESTINATIONS "true"
 # The gateway image runs as the unprivileged user `onecli`; a Railway volume
 # is mounted root-owned, so the CA directory would not be writable. Railway's
@@ -373,7 +377,7 @@ var_set gateway GATEWAY_ALLOW_PRIVATE_DESTINATIONS "true"
 # root — the gateway itself drops no privileges, but the platform volume is
 # the only thing it writes to).
 var_set gateway RAILWAY_RUN_UID "0"
-var_delete gateway BETTER_AUTH_COOKIE_DOMAIN
+var_delete gateway BETTER_AUTH_COOKIE_DOMAIN "host-only cookie on the dashboard's host"
 require_secret_ref gateway SECRET_ENCRYPTION_KEY
 require_secret_ref gateway GATEWAY_INTERNAL_SECRET
 
