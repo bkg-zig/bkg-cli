@@ -58,6 +58,34 @@ The script is the operator entry point. It
 Useful flags: `--dry-run` (change nothing), `--skip-push`, `--skip-iac`,
 `--project=ID`, `--confirm-destructive`.
 
+## Single origin (why the web proxies the api)
+
+Railway hands every service its own random domain
+(`<service>-production-<hash>.up.railway.app`). `up.railway.app` is a
+**public suffix** (the PSL's private section), so each of those hostnames is
+its own _registrable domain_ — two of them share no cookie scope. The
+session cookie would therefore be a third-party cookie, and `SameSite=Lax`
+keeps the browser from ever sending it: the sign-up request succeeds and the
+UI still bounces back to the login.
+
+So the browser only ever talks to the dashboard's own origin, and the web
+proxies the rest — the same hop `pnpm dev` does:
+
+| Path      | Upstream                                |
+| --------- | --------------------------------------- |
+| `/v1/*`   | `http://api.railway.internal:10256`     |
+| `/auth/*` | `http://api.railway.internal:10256`     |
+| `/gw/*`   | `http://gateway.railway.internal:10255` |
+
+The switch is `ONECLI_SINGLE_ORIGIN_PROXY=1` on the **web** service; the
+web image bakes it (and the two internal upstreams) into the build, because
+Next.js resolves `rewrites()` at build time. `API_URL` and `GATEWAY_API_URL`
+stay **unset** on every service — the resolver then derives them from
+`ONECLI_EXTERNAL_URL` (the dashboard's origin and `<origin>/gw`).
+
+The compose stack and the Helm chart do not need this: they serve the api
+on the same hostname (ports differ, cookies do not care).
+
 ## Variables
 
 The three secrets below exist as **shared variables** of the Railway project

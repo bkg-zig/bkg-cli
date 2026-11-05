@@ -27,17 +27,39 @@ const appVersion = resolveAppVersion();
 // under the dev server, so production builds bake no rewrites at all.
 const isDev = process.env.NODE_ENV === "development";
 
-// Where the dev server proxies `/v1`, better-auth and the gateway to. These are
-// the services' addresses on the local network — deliberately NOT the public
+// Where the web proxies `/v1`, better-auth and the gateway to. These are the
+// services' addresses on the local network — deliberately NOT the public
 // `API_URL`/`GATEWAY_API_URL`: a dev who points those at a tunnel would send
 // the proxy hop back out through the tunnel it came from (web → tunnel → web,
 // a loop). The same internal-address vars the rest of the stack already uses.
-const devApiUrl = (
-  process.env.INTERNAL_API_URL ?? "http://localhost:10256"
+const apiUpstream = (
+  process.env.INTERNAL_API_URL ??
+  process.env.API_INTERNAL_URL ??
+  "http://localhost:10256"
 ).replace(/\/+$/, "");
-const devGatewayUrl = (
+const gatewayUpstream = (
   process.env.GATEWAY_INTERNAL_URL ?? "http://localhost:10255"
 ).replace(/\/+$/, "");
+
+// Production single-origin mode.
+//
+// A deployment whose dashboard and api-server cannot share a host needs the
+// api behind the dashboard's own origin: the session cookie is host-scoped,
+// and two hosts that share no registrable domain make it a THIRD-PARTY
+// cookie — `SameSite=Lax` then keeps the browser from ever sending it, and
+// the dashboard's server-rendered pages never see a session (the sign-up
+// request succeeds and the UI still bounces to the login).
+//
+// Railway's random `*.up.railway.app` domains are exactly that case:
+// `up.railway.app` is a public suffix (the PSL's private section), so every
+// generated hostname is its own registrable domain and no cookie can span
+// two of them. `ONECLI_SINGLE_ORIGIN_PROXY=1` turns on the same hop `pnpm
+// dev` does — the api's prefixes and the gateway under the dashboard's
+// origin — so the cookie belongs to ONE host.
+//
+// OFF unless a deployment asks for it: the compose stack and the Helm chart
+// serve the api on the same hostname (ports differ, cookies do not care).
+const singleOriginProxy = process.env.ONECLI_SINGLE_ORIGIN_PROXY === "1";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -142,8 +164,8 @@ const nextConfig = {
     },
   ],
   //
-  // `rewrites()` exists for exactly one reason: to serve the whole DEV stack
-  // on a SINGLE ORIGIN. better-auth issues the session cookie for the host
+  // `rewrites()` exists for exactly one reason: to serve the whole stack on
+  // a SINGLE ORIGIN. better-auth issues the session cookie for the host
   // that answered, and browsers scope cookies by host — so in dev, where the
   // dashboard (:10254), api-server (:10256) and gateway (:10255) are separate
   // processes, one tunnel (ngrok, Cloudflare Tunnel) in front of any single
@@ -151,31 +173,32 @@ const nextConfig = {
   // gateway under the dev server's own origin means one tunnel to :10254
   // serves the whole product, and the cookie is always same-origin.
   //
-  // Dev only: production self-hosts either share one hostname (ports differ —
-  // cookies don't care) or split onto sibling subdomains, where the session
-  // cookie spans the shared parent domain (see `resolveCookieDomain` in
-  // @onecli/api). Production browsers talk to the api-server directly.
+  // The same hop, in production, for deployments whose hosts share no
+  // registrable domain (Railway's random `*.up.railway.app` domains) —
+  // opt-in via ONECLI_SINGLE_ORIGIN_PROXY=1, see `singleOriginProxy` above.
   //
   // `afterFiles`, never `beforeFiles`: the filesystem router must win first,
   // or these would shadow the dashboard's own `/auth/login`, `/auth/signup`,
   // `/auth/cli` pages and the `/v1/health` deploy probe. `/gw` is a stripped
   // prefix of our own invention — the gateway's browser routes live under
-  // `/v1/*` too, so they'd collide with the api-server's without one. Dev-only
-  // but edition-agnostic: a production deployment has its own edge routing,
-  // but cloud DEV behind one tunnel needs the same single origin. For that
+  // `/v1/*` too, so they'd collide with the api-server's without one. For the
   // cloud-dev tunnel, set BOTH baked vars at dev-server start —
   // NEXT_PUBLIC_API_URL=<tunnel-origin> and
   // NEXT_PUBLIC_GATEWAY_API_URL=<tunnel-origin>/gw — since cloud skips the
   // runtime origin injection onprem gets; these rewrites then carry both legs.
-  rewrites: !isDev
-    ? undefined
-    : async () => ({
-        afterFiles: [
-          { source: "/v1/:path*", destination: `${devApiUrl}/v1/:path*` },
-          { source: "/auth/:path*", destination: `${devApiUrl}/auth/:path*` },
-          { source: "/gw/:path*", destination: `${devGatewayUrl}/:path*` },
-        ],
-      }),
+  rewrites:
+    !isDev && !singleOriginProxy
+      ? undefined
+      : async () => ({
+          afterFiles: [
+            { source: "/v1/:path*", destination: `${apiUpstream}/v1/:path*` },
+            {
+              source: "/auth/:path*",
+              destination: `${apiUpstream}/auth/:path*`,
+            },
+            { source: "/gw/:path*", destination: `${gatewayUpstream}/:path*` },
+          ],
+        }),
   // The proxy above holds long-lived responses open — the approvals long-poll
   // sits silent for ~30s and the conversation stream is an indefinite SSE.
   // Next's proxy defaults to a 30s timeout, which would clip both; this is an

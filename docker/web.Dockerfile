@@ -36,12 +36,29 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}
 
+# Single-origin proxy (production): the dashboard's own origin also serves
+# /v1 + /auth (the api) and /gw/* (the gateway). Needed wherever the
+# dashboard and the api-server cannot share a host — Railway's random
+# `*.up.railway.app` domains are separate registrable domains
+# (`up.railway.app` is a public suffix), so the session cookie would be a
+# third-party cookie and SameSite=Lax would keep the browser from sending
+# it. Railway injects service variables into the build as build args, so the
+# ARG names below ARE the variable names. The rewrite destinations are baked
+# into the build — they are passed to the build step only, never to the
+# runtime image.
+ARG ONECLI_SINGLE_ORIGIN_PROXY=""
+ARG INTERNAL_API_URL="http://localhost:10256"
+ARG GATEWAY_INTERNAL_URL="http://localhost:10255"
+
 COPY --from=deps /app/ .
 COPY --from=pruner /app/out/full/ .
 RUN pnpm --filter @onecli/db generate
 # Dummy DATABASE_URL satisfies Prisma during static page generation
 RUN --mount=type=cache,id=s/41b5514b-98dd-4cd5-990b-fe9a38b086d2-/app/apps/web/.next/cache,target=/app/apps/web/.next/cache \
     DATABASE_URL="postgresql://build:build@localhost/build" \
+    ONECLI_SINGLE_ORIGIN_PROXY="${ONECLI_SINGLE_ORIGIN_PROXY}" \
+    INTERNAL_API_URL="${INTERNAL_API_URL}" \
+    GATEWAY_INTERNAL_URL="${GATEWAY_INTERNAL_URL}" \
     pnpm build --filter=@onecli/web
 
 # ──────────────────────────────────────────────
