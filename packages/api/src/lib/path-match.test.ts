@@ -106,4 +106,9 @@ describe("isLlmHost", () => {
     expect(isLlmHost("generativelanguage.googleapis.com")).toBe(true);
     expect(isLlmHost("gmail.googleapis.com")).toBe(false);
   });
+
+  it("counts the Custom provider's host as LLM traffic", () => {
+    expect(isLlmHost("api.eysho.info")).toBe(true);
+    expect(isLlmHost("api.eysho.info:443")).toBe(true);
+  });
 });

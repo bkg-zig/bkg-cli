@@ -1,7 +1,7 @@
 //! Secret-to-injection mapping and OpenAI OAuth token refresh.
 //!
 //! Converts decrypted secret values into injection instructions based on the
-//! secret type (anthropic, openai, generic). OpenAI supports both API keys
+//! secret type (anthropic, openai, eysho, generic). OpenAI supports both API keys
 //! (plain string) and OAuth credentials (JSON with tokens). Also handles
 //! OpenAI OAuth token refresh and credential persistence.
 
@@ -93,6 +93,14 @@ pub fn build_injections(
                 }]
             }
         }
+
+        // Eysho — the dashboard's "Custom" provider — is OpenAI-compatible and
+        // speaks API keys only (no OAuth). Same wire shape as an OpenAI API
+        // key: a Bearer in the authorization header.
+        "eysho" => vec![Injection::SetHeader {
+            name: "authorization".to_string(),
+            value: format!("Bearer {decrypted_value}"),
+        }],
 
         "generic" => {
             let config = injection_config.and_then(|v| v.as_object());
@@ -267,7 +275,7 @@ pub fn secret_injects_on_host(
 /// collapse below can never disagree about which types count.
 #[must_use]
 pub fn is_llm_provider_type(secret_type: &str) -> bool {
-    matches!(secret_type, "anthropic" | "openai")
+    matches!(secret_type, "anthropic" | "openai" | "eysho")
 }
 
 /// The secrets that may actually be INJECTED: at most one per LLM provider
@@ -714,6 +722,47 @@ mod tests {
                 value: "Bearer sk-proj-abc123".to_string(),
             }
         );
+    }
+
+    // ── build_injections: eysho (the dashboard's "Custom" provider) ───────
+
+    /// The Custom provider is OpenAI-compatible: its key reaches the upstream
+    /// as a Bearer, like an OpenAI API key. Without this arm the gateway
+    /// injected NOTHING for a Custom key — the credential was stored, granted
+    /// and shown in the UI, yet every agent call to api.eysho.info went out
+    /// unauthenticated.
+    #[test]
+    fn build_injections_eysho() {
+        let injections = build_injections("eysho", "sk-proj-abc123", None, None);
+        assert_eq!(injections.len(), 1);
+        assert_eq!(
+            injections[0],
+            Injection::SetHeader {
+                name: "authorization".to_string(),
+                value: "Bearer sk-proj-abc123".to_string(),
+            }
+        );
+    }
+
+    /// An OAuth-mode metadata must not turn the Custom provider into a
+    /// subscription token: it speaks API keys only.
+    #[test]
+    fn build_injections_eysho_ignores_oauth_metadata() {
+        let meta = serde_json::json!({"authMode": "oauth"});
+        let injections = build_injections("eysho", "sk-proj-abc123", None, Some(&meta));
+        assert_eq!(
+            injections,
+            vec![Injection::SetHeader {
+                name: "authorization".to_string(),
+                value: "Bearer sk-proj-abc123".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn eysho_is_an_llm_provider_type() {
+        assert!(is_llm_provider_type("eysho"));
+        assert!(!is_llm_provider_type("generic"));
     }
 
     // ── build_injections: openai oauth ──────────────────────────────────

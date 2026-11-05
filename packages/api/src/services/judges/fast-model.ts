@@ -25,6 +25,9 @@ import { callLlm, postToProvider, type LlmCallKey } from "../llm-direct-call";
 const FAST_MODEL: Record<LlmCallKey["provider"], string> = {
   anthropic: "claude-haiku-5-5",
   openai: "gpt-6-luna",
+  // The Custom provider's own default/fallback model — the only one it
+  // documents, so a judge never names a model the provider cannot run.
+  eysho: "gpt-4o-mini",
 };
 
 export interface FastAsk {

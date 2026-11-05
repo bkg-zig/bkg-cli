@@ -40,7 +40,8 @@ const normalizeOpenaiValue = (
 const SECRET_TYPE_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
-  eysho: "Eysho",
+  // The dashboard's name for this provider is "Custom" — never "Eysho".
+  eysho: "Custom",
   generic: "Custom",
 };
 

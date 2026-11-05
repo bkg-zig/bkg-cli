@@ -198,6 +198,7 @@ pub fn is_llm_host(host: &str) -> bool {
         || h.contains("openrouter.ai")
         || h.contains("moonshot.cn")
         || h.contains("generativelanguage.googleapis.com")
+        || h.contains("eysho.info")
 }
 
 /// Check if a request should be blocked by any policy rule (sync, block-only).
@@ -458,6 +459,7 @@ mod tests {
         assert!(is_llm_host("openrouter.ai"));
         assert!(is_llm_host("api.moonshot.cn"));
         assert!(is_llm_host("generativelanguage.googleapis.com"));
+        assert!(is_llm_host("api.eysho.info"));
     }
 
     #[test]

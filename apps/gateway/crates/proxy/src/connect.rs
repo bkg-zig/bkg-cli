@@ -142,7 +142,7 @@ pub enum RestrictedCredential {
 pub enum SecretKind {
     /// A `generic` secret: the agent's Connections page, Custom tab.
     Custom,
-    /// A typed LLM key (`anthropic`, `openai`): the agent's Models page.
+    /// A typed LLM key (`anthropic`, `openai`, `eysho`): the agent's Models page.
     LlmKey,
 }
 

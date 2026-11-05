@@ -56,6 +56,35 @@ describe("credential injection", () => {
     expect(seen?.header("authorization")).toBe(`Bearer ${SECRET}`);
   });
 
+  scenario("injects the Custom provider's key as a Bearer", async (cx) => {
+    const upstream = await cx.upstream();
+    await cx.seed({
+      grantAll: true,
+      // The Custom provider (Eysho) is OpenAI-compatible: the gateway
+      // derives the header from the TYPE, exactly like an OpenAI API key.
+      // Before it knew the type, it injected NOTHING for a Custom key —
+      // the credential was stored and granted, yet every agent call went
+      // out unauthenticated.
+      secrets: [
+        {
+          type: "eysho",
+          hostPattern: "127.0.0.1",
+          value: "sk-proj-e2e",
+        },
+      ],
+    });
+    const gw = await cx.startGateway();
+
+    const res = await throughProxy(gw.origin, {
+      url: upstream.url("/v1/chat/completions"),
+      token: cx.ids.agentToken,
+    });
+
+    expect(res.status).toBe(200);
+    const [seen] = await upstream.waitForRequests(1);
+    expect(seen?.header("authorization")).toBe("Bearer sk-proj-e2e");
+  });
+
   scenario(
     "does not leak the agent's proxy credential upstream",
     async (cx) => {

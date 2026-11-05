@@ -1,0 +1,166 @@
+{
+  "tasks": [
+    {
+      "id": "railway-tango-deploy-2026-11-05",
+      "title": "Deploy the whole OneCLI stack (tango) to Railway and make the Eysho/Custom LLM provider usable",
+      "agent": "opencode",
+      "model": "MiniMax-M3.1-Flash",
+      "tools": [
+        "shell",
+        "edit",
+        "write",
+        "webfetch",
+        "agent-browser",
+        "read",
+        "grep"
+      ],
+      "skills": ["agent-browser"],
+      "scope": [
+        ".railway/railway.ts (Railway IaC)",
+        "scripts/deploy-railway.sh (operator entry point)",
+        "docker/gateway.Dockerfile, docker/web.Dockerfile",
+        "apps/web/next.config.js (single-origin proxy)",
+        "apps/web/src/app/(dashboard)/w/[workspaceId]/connections/_components/secret-dialog.tsx",
+        "apps/gateway/crates/onecli-gateway/src/main.rs (writable default data dir)",
+        "docs/railway.md"
+      ],
+      "startedAt": "2026-11-04T21:00:00Z",
+      "finishedAt": "2026-11-05T01:00:00Z",
+      "status": "done",
+      "railway": {
+        "project": "magnificent-reflection (f4449d3f-d3d6-42d9-947d-65a55c9f5f93)",
+        "environment": "production (e5b9fc9e-1f24-4675-b8ae-e478d6979038)",
+        "services": [
+          "migrations (one-off job, restartPolicy NEVER)",
+          "api (10256, /v1/health)",
+          "bkg-one-cli (10254, /healthz) — the dashboard",
+          "gateway (10255, /healthz, volume /app/data)",
+          "Postgres (managed)"
+        ],
+        "domains": [
+          "https://bkg-one-cli-production.up.railway.app",
+          "https://api-production-f27ca.up.railway.app",
+          "https://gateway-production-b061.up.railway.app"
+        ]
+      },
+      "changedFiles": [
+        ".railway/railway.ts",
+        ".railway/package.json",
+        ".railway/package-lock.json",
+        ".railway/README.md",
+        "docs/railway.md",
+        "scripts/deploy-railway.sh",
+        "docker/gateway.Dockerfile",
+        "docker/web.Dockerfile",
+        "apps/web/next.config.js",
+        "apps/web/src/next-config-single-origin.test.ts",
+        "apps/web/src/app/(dashboard)/w/[workspaceId]/connections/_components/secret-dialog.tsx",
+        "apps/web/src/app/(dashboard)/w/[workspaceId]/connections/_components/secret-dialog.test.tsx",
+        "apps/gateway/crates/onecli-gateway/src/main.rs",
+        "turbo.json (ONECLI_SINGLE_ORIGIN_PROXY in globalPassThroughEnv)",
+        "railway.json, railway/* (deleted — superseded by the IaC file)"
+      ],
+      "commits": [
+        "32ef0b97 fix(gateway): only use /app/data as default data dir when it is writable",
+        "a13637dc feat(railway): deploy the tango branch with Railway IaC",
+        "a95784b5 fix(railway): drop the Dockerfile VOLUME Railway rejects, harden the deploy script",
+        "abcfd83d fix(railway): use the real service names and check them up front",
+        "05c0a912 feat(web): single-origin proxy so a split-domain deployment can sign in",
+        "810df31c fix(web): the Custom secret dialog must not name OpenAI's host"
+      ],
+      "rootCauses": [
+        "railway.json used a 'services' map the Railway schema does not know; the web silently fell back to RAILPACK — replaced by the .railway/railway.ts IaC file.",
+        "Railway's Docker builder rejects 'VOLUME' in a Dockerfile ('docker VOLUME at Line 67 is not supported, use Railway Volumes') — the gateway image never built.",
+        "The web domain pointed at 10254 while the container listened on Railway's injected PORT=8080 → 502 on every request.",
+        "up.railway.app is a public suffix (PSL private section): every generated Railway hostname is its own registrable domain, so a session cookie between the dashboard and the api is a third-party cookie that SameSite=Lax never sends — sign-up returned 200 but the UI hung. Fixed with the single-origin proxy (ONECLI_SINGLE_ORIGIN_PROXY=1).",
+        "The gateway's default data dir picked /app/data on mere existence; a root-owned /app/data on the host made the first CA write fail with EACCES — now probed for writability."
+      ],
+      "verification": [
+        "cargo test -p onecli-gateway --bin onecli-gateway → 3 passed",
+        "vitest (apps/web): next-config-single-origin, next-config-redirects, next-config-bake → 18 passed",
+        "vitest (apps/web): secret-dialog.test.tsx → 54 passed (incl. the new api.eysho.info wording test)",
+        "eslint --max-warnings 0 on the changed web files → clean",
+        "curl https://bkg-one-cli-production.up.railway.app/v1/health → 200 (API through the web proxy)",
+        "curl https://bkg-one-cli-production.up.railway.app/gw/healthz → 200 (gateway through the web proxy)",
+        "curl https://bkg-one-cli-production.up.railway.app/healthz → 200",
+        "curl https://api-production-f27ca.up.railway.app/v1/health → 200",
+        "curl https://gateway-production-b061.up.railway.app/healthz → 200",
+        "browser (agent-browser): account created and sign-in works; Connections → LLMs → Add LLM Key shows Anthropic / OpenAI / Custom; the Custom dialog reads 'Your key is encrypted and injected into requests to api.eysho.info.', name 'Custom Token', host pattern 'api.eysho.info'"
+      ],
+      "blockers": [
+        "The gateway image compiles the Rust workspace from scratch on Railway (~6-12 min per build).",
+        "The prod compose stack under /srv/bkg/services/onecli is down (only postgres runs) — cli.eysho.info answers 404; it was not part of this task."
+      ],
+      "notes": [
+        "Shared secrets (BETTER_AUTH_SECRET, SECRET_ENCRYPTION_KEY, GATEWAY_INTERNAL_SECRET) were never rewritten — a fresh SECRET_ENCRYPTION_KEY would orphan every encrypted credential.",
+        "API_URL / GATEWAY_API_URL stay unset on Railway: the browser must use the dashboard's own origin, the resolver derives api=<origin> and gateway=<origin>/gw.",
+        "Another agent session works in the same repo (turbo bump in package.json/pnpm-lock.yaml/turbo.json) — those changes were never staged into these commits."
+      ]
+    },
+    {
+      "id": "eysho-custom-provider-runtime-2026-11-05",
+      "title": "Make the Custom (Eysho) provider work in the runtime paths, not just in the UI",
+      "agent": "opencode",
+      "model": "MiniMax-M3.1-Flash",
+      "tools": ["shell", "edit", "write", "read", "grep"],
+      "skills": [],
+      "scope": [
+        "apps/gateway/crates/inject/src/secret_inject.rs (credential injection per secret type)",
+        "apps/gateway/crates/policy/src/lib.rs (is_llm_host)",
+        "apps/gateway/crates/proxy/src/connect.rs (SecretKind doc)",
+        "packages/api/src/services/llm-direct-call.ts (server-side provider calls)",
+        "packages/api/src/services/judges/fast-model.ts (fast model per provider)",
+        "packages/api/src/lib/path-match.ts, packages/api/src/lib/llm-hosts.ts (LLM host lists)",
+        "packages/api/src/llm/eysho.ts, packages/api/src/services/secret-service.ts (provider labels)",
+        "apps/gateway-e2e/src/fixtures.ts, apps/gateway-e2e/tests/inject.test.ts (e2e proof)"
+      ],
+      "startedAt": "2026-11-05T02:20:00Z",
+      "finishedAt": "2026-11-05T03:10:00Z",
+      "status": "done",
+      "rootCauses": [
+        "The provider type 'eysho' was added to the API's provider registry, but the Rust gateway — the component that actually injects credentials into agent traffic — knew only 'anthropic', 'openai' and 'generic'. build_injections('eysho') fell through to the empty arm, so a Custom key was stored, granted and shown in the UI while every agent call to api.eysho.info went out unauthenticated.",
+        "llm-direct-call.ts mapped every non-Anthropic credential to the OpenAI shape and origin, so a Custom key resolved as {provider:'openai'} and would have been sent to api.openai.com — a credential leak to a third party.",
+        "api.eysho.info was missing from both LLM-host lists (Rust policy::is_llm_host and its TypeScript mirror), so the provider's traffic was not recognized as LLM traffic.",
+        "The provider label was 'Eysho' in the API registry and in the secret-type labels, so the dashboard's own surfaces (model card, secret card, grant row) showed 'Eysho' instead of the agreed 'Custom'."
+      ],
+      "changedFiles": [
+        "apps/gateway/crates/inject/src/secret_inject.rs",
+        "apps/gateway/crates/policy/src/lib.rs",
+        "apps/gateway/crates/proxy/src/connect.rs",
+        "packages/api/src/services/llm-direct-call.ts",
+        "packages/api/src/services/llm-direct-call.test.ts",
+        "packages/api/src/services/judges/fast-model.ts",
+        "packages/api/src/lib/path-match.ts",
+        "packages/api/src/lib/path-match.test.ts",
+        "packages/api/src/lib/llm-hosts.ts",
+        "packages/api/src/llm/eysho.ts",
+        "packages/api/src/services/secret-service.ts",
+        "packages/api/src/testing/hermetic-env.ts",
+        "apps/gateway-e2e/src/fixtures.ts",
+        "apps/gateway-e2e/tests/inject.test.ts",
+        "turbo.json (EYSHO_API_BASE_URL in globalPassThroughEnv — own hunk staged, the concurrent turbo schema bump stays unstaged)"
+      ],
+      "commits": [
+        "fix(llm): the Custom provider must work in the runtime, not just in the UI"
+      ],
+      "verification": [
+        "cargo test -p inject -p policy → inject 134 passed (incl. 3 new eysho tests), policy 37 passed",
+        "cargo fmt --check -p inject -p policy -p proxy → clean",
+        "pnpm --filter @onecli/api check-types → clean",
+        "pnpm --filter @onecli/api lint → clean",
+        "pnpm --filter @onecli/gateway-e2e lint → clean",
+        "vitest (packages/api, full suite) → 5359 passed, 0 failed, 1871 skipped",
+        "vitest (packages/api, targeted) → llm-direct-call 25, path-match 11, llm-registry 36, secret-service 2, hermetic-env 17 passed",
+        "gateway-e2e tests/inject.test.ts → 23 passed, incl. 'injects the Custom provider's key as a Bearer' (real gateway binary, real DB row, real decrypt, upstream saw 'authorization: Bearer sk-proj-e2e')",
+        "gateway-e2e full suite → 300 passed / 11 failed; all 11 are the Postgres front-door scenarios and they fail IDENTICALLY with the HEAD binary (git stash + rebuild + rerun) — pre-existing in this environment, not caused by this change"
+      ],
+      "blockers": [],
+      "notes": [
+        "The eysho provider is API-key only: no OAuth arm, and the metadata's authMode is ignored for it.",
+        "The Decisions API stays OpenAI-only: answersTyped() is not widened, so a Custom key uses the prompt path with the provider's own fallback model gpt-4o-mini.",
+        "Railway auto-deploys on every push to tango, so the push triggers a full rebuild of all four services.",
+        "EYSHO_API_BASE_URL is a test-double override like ANTHROPIC_API_BASE_URL / OPENAI_API_BASE_URL; it must stay in the hermetic-env list, in turbo.json's globalPassThroughEnv and out of every ambient shell."
+      ]
+    }
+  ]
+}

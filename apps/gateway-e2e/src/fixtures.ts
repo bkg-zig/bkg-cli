@@ -20,7 +20,7 @@ import type { TestIds } from "./ids.js";
 
 /**
  * How a secret is injected. The gateway derives this from the secret's `type`
- * for the provider types (`anthropic`, `openai`); `generic` reads
+ * for the provider types (`anthropic`, `openai`, `eysho`); `generic` reads
  * `injectionConfig`, and exactly one of these shapes applies —
  * `headerName` wins if several are set (`secret_inject.rs:100`).
  */
@@ -53,10 +53,10 @@ export interface SecretSpec extends InjectionSpec {
   readonly pathPattern?: string;
   /**
    * Defaults to `generic`, the one type whose host pattern passes through
-   * verbatim so it can target a local stub. `anthropic` / `openai` derive
-   * their injection from the type and ignore `injectionConfig`.
+   * verbatim so it can target a local stub. `anthropic` / `openai` / `eysho`
+   * derive their injection from the type and ignore `injectionConfig`.
    */
-  readonly type?: "generic" | "anthropic" | "openai";
+  readonly type?: "generic" | "anthropic" | "openai" | "eysho";
   /**
    * `organization` stores the row against the org with a null workspace — the
    * only shape `find_secrets_by_org` returns. Defaults to `workspace`.

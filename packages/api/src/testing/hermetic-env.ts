@@ -202,6 +202,7 @@ export const AMBIENT_HAZARD_VARS: readonly string[] = [
   "SLACK_CDN_BASE_URL",
   "ANTHROPIC_API_BASE_URL",
   "OPENAI_API_BASE_URL",
+  "EYSHO_API_BASE_URL",
   // The shared Slack app (deployment config): ambient real credentials would
   // make the shared arm exist inside tests — the routes and posture helpers
   // branch on presence, so these must never leak in from a dev shell.

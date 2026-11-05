@@ -45,7 +45,7 @@ const AGENT = { id: "ag1", workspaceId: "w1" };
 const FENCE = { fenced: "ag1" };
 
 const credential = (
-  provider: "anthropic" | "openai",
+  provider: "anthropic" | "openai" | "eysho",
   authMode: "api-key" | "oauth" = "api-key",
   hasReadableValue = true,
 ) => ({
@@ -111,6 +111,7 @@ afterEach(() => {
   server = undefined;
   delete process.env.ANTHROPIC_API_BASE_URL;
   delete process.env.OPENAI_API_BASE_URL;
+  delete process.env.EYSHO_API_BASE_URL;
 });
 
 const API_KEY = {
@@ -197,6 +198,18 @@ describe("resolveLlmCallKey", () => {
     expect(await resolveLlmCallKey(AGENT, "org1")).toEqual({
       ok: true,
       key: { provider: "openai", value: "sk-plain" },
+    });
+  });
+
+  /// The Custom (Eysho) provider has its own shape. A provider this path did
+  /// not know fell into the OpenAI arm — and the key would then have been sent
+  /// to OpenAI's own origin.
+  it("a Custom (Eysho) key resolves to its own provider shape, never OpenAI's", async () => {
+    resolution.credential.mockResolvedValue(credential("eysho"));
+    resolution.value.mockResolvedValue("sk-proj-eysho");
+    expect(await resolveLlmCallKey(AGENT, "org1")).toEqual({
+      ok: true,
+      key: { provider: "eysho", value: "sk-proj-eysho" },
     });
   });
 });
@@ -410,6 +423,42 @@ describe("callLlm: OpenAI API key", () => {
       final: true,
     });
     expect(String(err)).not.toContain("sk-oa");
+  });
+});
+
+describe("callLlm: Custom provider (Eysho)", () => {
+  const CUSTOM = { provider: "eysho", value: "sk-proj-eysho" } as const;
+
+  it("sends the key to the provider's OWN origin, as a Bearer", async () => {
+    // OpenAI's origin points at a port nothing listens on: a call that went
+    // there would fail instead of quietly reaching the wrong provider.
+    process.env.OPENAI_API_BASE_URL = "http://127.0.0.1:1";
+    process.env.EYSHO_API_BASE_URL = await startFake(() => ({
+      body: { choices: [{ message: { content: "yes" } }] },
+    }));
+
+    expect(
+      await callLlm(CUSTOM, { ...CALL, jsonSchema: SCHEMA, signal: signal() }),
+    ).toEqual({ text: "yes" });
+
+    const [sent] = seen;
+    expect(sent?.path).toBe("/v1/chat/completions");
+    expect(sent?.headers.authorization).toBe("Bearer sk-proj-eysho");
+    expect(sent?.body).toMatchObject({
+      model: "m1",
+      max_completion_tokens: 100,
+      messages: [
+        { role: "system", content: "Grade strictly." },
+        { role: "user", content: "Is 2+2=4?" },
+      ],
+    });
+  });
+
+  it("names the provider the way the dashboard names it: Custom", async () => {
+    process.env.EYSHO_API_BASE_URL = await startFake(() => ({ status: 429 }));
+    await expect(
+      callLlm(CUSTOM, { ...CALL, signal: signal() }),
+    ).rejects.toThrow("The Custom provider is rate limiting the key (429)");
   });
 });
 

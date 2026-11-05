@@ -191,6 +191,7 @@ export const isLlmHost = (host: string): boolean => {
     h.includes("groq.com") ||
     h.includes("openrouter.ai") ||
     h.includes("moonshot.cn") ||
-    h.includes("generativelanguage.googleapis.com")
+    h.includes("generativelanguage.googleapis.com") ||
+    h.includes("eysho.info")
   );
 };

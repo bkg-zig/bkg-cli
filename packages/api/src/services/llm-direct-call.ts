@@ -29,7 +29,12 @@ export type LlmCallKey =
   /** A plain OpenAI API key. A ChatGPT sign-in has no server-side door:
    * OpenAI documents ChatGPT plan usage only for apps that register their
    * own Sign in with ChatGPT client, never for a reused Codex login. */
-  | { provider: "openai"; value: string };
+  | { provider: "openai"; value: string }
+  /** The dashboard's "Custom" provider (Eysho): OpenAI-compatible, API keys
+   * only. Its own arm, because a provider this call does not know would fall
+   * into the OpenAI shape — and the key would then be sent to OpenAI's own
+   * origin instead of the provider's. */
+  | { provider: "eysho"; value: string };
 
 /** Why an agent has no key usable here. */
 export type LlmCallKeyUnavailable =
@@ -84,7 +89,9 @@ export const resolveLlmCallKey = async (
     key:
       credential.provider === "anthropic"
         ? { provider: "anthropic", authMode: credential.authMode, value }
-        : { provider: "openai", value },
+        : credential.provider === "eysho"
+          ? { provider: "eysho", value }
+          : { provider: "openai", value },
   };
 };
 
@@ -121,13 +128,16 @@ export class LlmModelUnavailableError extends LlmCallError {
 const isSubscription = (key: LlmCallKey) =>
   key.provider === "anthropic" && key.authMode === "oauth";
 
-/** The key kind as the reader knows it. */
+/** The key kind as the reader knows it. The Custom provider is named the way
+ * the dashboard names it — "Custom", never "Eysho". */
 const labelOf = (key: LlmCallKey): string =>
   key.provider === "openai"
     ? "OpenAI"
-    : isSubscription(key)
-      ? "Claude subscription"
-      : "Anthropic";
+    : key.provider === "eysho"
+      ? "Custom"
+      : isSubscription(key)
+        ? "Claude subscription"
+        : "Anthropic";
 
 const httpFailure = (key: LlmCallKey, status: number): LlmCallError => {
   const label = labelOf(key);
@@ -154,13 +164,16 @@ const httpFailure = (key: LlmCallKey, status: number): LlmCallError => {
 
 /** Call-time reads so tests point at fake servers; the defaults are the
  * hardcoded real origins. */
-const originOf = (provider: LlmCallKey["provider"]): string =>
-  provider === "anthropic"
-    ? (process.env.ANTHROPIC_API_BASE_URL ?? "https://api.anthropic.com")
-    : (process.env.OPENAI_API_BASE_URL ?? "https://api.openai.com");
+const originOf = (provider: LlmCallKey["provider"]): string => {
+  if (provider === "anthropic")
+    return process.env.ANTHROPIC_API_BASE_URL ?? "https://api.anthropic.com";
+  if (provider === "eysho")
+    return process.env.EYSHO_API_BASE_URL ?? "https://api.eysho.info";
+  return process.env.OPENAI_API_BASE_URL ?? "https://api.openai.com";
+};
 
 const authHeaders = (key: LlmCallKey): Record<string, string> => {
-  if (key.provider === "openai")
+  if (key.provider === "openai" || key.provider === "eysho")
     return { authorization: `Bearer ${key.value}` };
   return {
     "anthropic-version": "2023-06-01",
@@ -292,8 +305,11 @@ const askAnthropic = async (
   return { text };
 };
 
-const askOpenai = async (
-  key: Extract<LlmCallKey, { provider: "openai" }>,
+/** The OpenAI-compatible wire shape: Chat Completions, a Bearer, and the
+ * structured-output envelope. Shared by OpenAI and the Custom provider
+ * (Eysho), which speaks the same protocol. */
+const askOpenAiCompatible = async (
+  key: Extract<LlmCallKey, { provider: "openai" | "eysho" }>,
   call: LlmCall,
 ): Promise<LlmCallResult> => {
   const body = await postToProvider(
@@ -336,4 +352,6 @@ export const callLlm = (
   key: LlmCallKey,
   call: LlmCall,
 ): Promise<LlmCallResult> =>
-  key.provider === "anthropic" ? askAnthropic(key, call) : askOpenai(key, call);
+  key.provider === "anthropic"
+    ? askAnthropic(key, call)
+    : askOpenAiCompatible(key, call);

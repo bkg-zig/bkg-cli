@@ -15,4 +15,5 @@ export const LLM_HOST_FRAGMENTS = [
   "openrouter.ai",
   "moonshot.cn",
   "generativelanguage.googleapis.com",
+  "eysho.info",
 ] as const;

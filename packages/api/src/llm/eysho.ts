@@ -33,7 +33,8 @@ const humanize = (id: string): string =>
 
 export const eysho: LlmProvider = {
   id: "eysho",
-  label: "Eysho",
+  // The dashboard's name for this provider is "Custom" — never "Eysho".
+  label: "Custom",
   order: 99,
   defaultModel: "gpt-4o-mini",
   efforts: [
