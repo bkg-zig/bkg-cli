@@ -83,12 +83,23 @@ The deploy script sets the non-secret wiring:
 - `ONECLI_BIND_HOST=0.0.0.0`, `ONECLI_APP_PORT`, `ONECLI_API_PORT`,
   `ONECLI_GATEWAY_PORT`, `GATEWAY_INTERNAL_URL`, `API_INTERNAL_URL`,
   `INTERNAL_API_URL`, `ONECLI_AGENT_PROXY_ADDRESS`.
+- `RAILWAY_RUN_UID=0` — gateway only. Railway mounts a volume root-owned, the
+  gateway image runs as the unprivileged user `onecli`, and the CA directory
+  has to be writable; this is Railway's documented switch for that.
 
 `BETTER_AUTH_COOKIE_DOMAIN` stays **unset** on Railway: the public domains
 are siblings under `up.railway.app`, and a cookie scoped to that shared
 parent would be readable by every other application on it. Without it
 Better-Auth issues a host-only cookie, which the dashboard sends to the API
 because both are same-site.
+
+## Dockerfile constraints
+
+Railway's Docker builder rejects a Dockerfile that declares a `VOLUME`
+("docker VOLUME … is not supported, use Railway Volumes"). The volume is
+attached by the platform instead (`volumeMounts` in `.railway/railway.ts`),
+so `docker/gateway.Dockerfile` declares no `VOLUME` — the compose stack
+mounts the named volume `app-data` explicitly anyway.
 
 ## Limitations
 

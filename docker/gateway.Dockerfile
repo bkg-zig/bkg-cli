@@ -62,9 +62,13 @@ COPY --from=builder /build/target/release/onecli-gateway /usr/local/bin/onecli-g
 
 # Data directory for the persisted CA and gateway state (shared read-only with
 # the api service in the compose stack, which serves the CA to install flows).
+#
+# NO `VOLUME ["/app/data"]` here: the compose stack mounts the named volume
+# `app-data` explicitly, and Railway's Docker builder rejects a Dockerfile
+# that declares a VOLUME ("docker VOLUME ... is not supported, use Railway
+# Volumes") — the volume is attached by the platform instead.
 RUN addgroup -S onecli && adduser -S onecli -G onecli && \
     mkdir -p /app/data && chown onecli:onecli /app/data
-VOLUME ["/app/data"]
 
 USER onecli
 

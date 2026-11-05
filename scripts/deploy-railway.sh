@@ -254,16 +254,31 @@ var_set() {
         ok "  $service/$name already correct"
         return 0
     fi
-    run railway variable set "$name=$value" --service "$service" --skip-deploys
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        log "(dry-run) railway variable set $name=… --service $service"
+        return 0
+    fi
+    if ! railway variable set "$name=$value" --service "$service" --skip-deploys; then
+        die "could not set $service/$name"
+    fi
     ok "  $service/$name set"
 }
 
 var_delete() {
     local service="$1" name="$2"
-    if [[ -n "$(var_get "$service" "$name")" ]]; then
-        warn "  deleting $service/$name (host-only cookies are required across the Railway domains)"
-        run railway variable delete "$name" --service "$service"
+    if [[ -z "$(var_get "$service" "$name")" ]]; then
+        ok "  $service/$name not set (nothing to delete)"
+        return 0
     fi
+    warn "  deleting $service/$name (host-only cookies are required across the Railway domains)"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        log "(dry-run) railway variable delete $name --service $service"
+        return 0
+    fi
+    # A shared variable cannot be deleted through a service scope — the
+    # warning says so, the deploy continues.
+    railway variable delete "$name" --service "$service" ||
+        warn "  could not delete $service/$name (shared variable?) — check it in the Railway dashboard"
 }
 
 require_secret_ref() {
@@ -316,19 +331,29 @@ set_vars_common gateway
 var_set gateway PORT "${SERVICE_PORT[gateway]}"
 var_set gateway INTERNAL_API_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
 var_set gateway GATEWAY_ALLOW_PRIVATE_DESTINATIONS "true"
+# The gateway image runs as the unprivileged user `onecli`; a Railway volume
+# is mounted root-owned, so the CA directory would not be writable. Railway's
+# documented switch for that is RAILWAY_RUN_UID=0 (the container then runs as
+# root — the gateway itself drops no privileges, but the platform volume is
+# the only thing it writes to).
+var_set gateway RAILWAY_RUN_UID "0"
 var_delete gateway BETTER_AUTH_COOKIE_DOMAIN
 require_secret_ref gateway SECRET_ENCRYPTION_KEY
 require_secret_ref gateway GATEWAY_INTERNAL_SECRET
 
 var_set migrations PORT "10256"
 
-# DATABASE_URL is a reference to the managed Postgres of this project.
+# DATABASE_URL is the managed Postgres of this project. Railway hands it out
+# as the reference `${{Postgres.DATABASE_URL}}` (the CLI resolves it to the
+# real URL when it reads the variable back), so the script never writes a
+# database password itself — it only sets the reference when a service has
+# none at all.
 for svc in migrations api web gateway; do
     current="$(var_get "$svc" DATABASE_URL)"
-    if [[ "$current" != '${{Postgres.DATABASE_URL}}' ]]; then
+    if [[ -z "$current" ]]; then
         var_set "$svc" DATABASE_URL '${{Postgres.DATABASE_URL}}'
     else
-        ok "  $svc/DATABASE_URL references the Railway Postgres"
+        ok "  $svc/DATABASE_URL points at the managed Postgres (kept)"
     fi
 done
 
@@ -339,38 +364,42 @@ log ""
 log "=== Deploying ==="
 
 deployment_status() {
-    local service="$1"
-    railway deployment list --service "$service" --limit 1 --json 2>/dev/null |
+    local service="$1" previous="${2:-}"
+    railway deployment list --service "$service" --limit 5 --json 2>/dev/null |
         python3 -c '
 import json, sys
+previous = sys.argv[1]
 try:
     data = json.load(sys.stdin)
 except Exception:
     print("UNKNOWN")
     sys.exit(0)
 items = data if isinstance(data, list) else data.get("deployments", [])
-if not items:
-    print("NONE")
+# The newest deployment that is not the one we saw before the redeploy —
+# otherwise an old SUCCESS would be mistaken for the new one.
+for item in items:
+    if not isinstance(item, dict):
+        continue
+    if previous and item.get("id") == previous:
+        break
+    print(item.get("status") or "UNKNOWN")
+    break
 else:
-    first = items[0]
-    if isinstance(first, dict):
-        print(first.get("status") or "UNKNOWN")
-    else:
-        print("UNKNOWN")
-'
+    print("PENDING")
+' "$previous"
 }
 
 wait_for_deployment() {
-    local service="$1" timeout="${2:-900}" waited=0 status
+    local service="$1" previous="${2:-}" timeout="${3:-900}" waited=0 status
     while ((waited < timeout)); do
-        status="$(deployment_status "$service")"
+        status="$(deployment_status "$service" "$previous")"
         case "$status" in
             SUCCESS)
                 ok "$service deployed successfully"
                 return 0
                 ;;
             FAILED | CRASHED | REMOVED)
-                die "$service deployment $status — inspect: railway logs --service $service"
+                die "$service deployment $status — inspect: railway logs --service $service --build"
                 ;;
         esac
         sleep 10
@@ -384,24 +413,34 @@ wait_for_deployment() {
 
 deploy_service() {
     local service="$1"
+    local previous
+    previous="$(railway deployment list --service "$service" --limit 1 --json 2>/dev/null |
+        python3 -c 'import json,sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print(""); raise SystemExit(0)
+items = data if isinstance(data, list) else data.get("deployments", [])
+print(items[0].get("id", "") if items and isinstance(items[0], dict) else "")')"
     log "deploying $service from source ($BRANCH)"
     run railway service redeploy --service "$service" --from-source --yes
+    echo "$previous"
 }
 
-deploy_service migrations
+deploy_service migrations > /tmp/onecli-deploy-prev-migrations
 if [[ "$DRY_RUN" -eq 0 ]]; then
-    wait_for_deployment migrations 1800
+    wait_for_deployment migrations "$(cat /tmp/onecli-deploy-prev-migrations)" 1800
 fi
 
 for svc in api web gateway; do
-    deploy_service "$svc"
+    deploy_service "$svc" > "/tmp/onecli-deploy-prev-$svc"
 done
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
     for svc in api web gateway; do
         # The gateway image compiles the Rust workspace from scratch on
         # Railway — that build is the long pole, hence the generous budget.
-        wait_for_deployment "$svc" 2400
+        wait_for_deployment "$svc" "$(cat "/tmp/onecli-deploy-prev-$svc")" 2400
     done
 fi
 
