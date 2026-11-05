@@ -32,6 +32,7 @@ ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
 DRY_RUN=0
 SKIP_PUSH=0
 SKIP_IAC=0
+VARIABLES_ONLY=0
 CONFIRM_DESTRUCTIVE=0
 
 # Service name → the port the image listens on (docker/*.Dockerfile).
@@ -47,15 +48,17 @@ for arg in "$@"; do
         --dry-run) DRY_RUN=1 ;;
         --skip-push) SKIP_PUSH=1 ;;
         --skip-iac) SKIP_IAC=1 ;;
+        --variables-only) VARIABLES_ONLY=1 ;;
         --confirm-destructive) CONFIRM_DESTRUCTIVE=1 ;;
         --project=*) PROJECT_ID="${arg#*=}" ;;
         -h | --help)
             cat <<EOF
-Usage: $0 [--dry-run] [--skip-push] [--skip-iac] [--project=ID] [--confirm-destructive]
+Usage: $0 [--dry-run] [--skip-push] [--skip-iac] [--variables-only] [--project=ID] [--confirm-destructive]
 
   --dry-run               Print what would happen; change nothing.
   --skip-push             Do not push the branch (deploy the last pushed commit).
   --skip-iac              Do not apply .railway/railway.ts.
+  --variables-only        Set the variables and stop — no deployment.
   --project=ID            Railway project to link (else: the already linked one).
   --confirm-destructive   Allow an IaC plan that destroys resources.
 
@@ -127,6 +130,25 @@ if ! railway status >/dev/null 2>&1; then
     die "no Railway project linked. Run: railway link --project <id> --environment $ENVIRONMENT"
 fi
 ok "linked: $(railway status 2>&1 | awk '/^Project:/{p=$2} /^Environment:/{e=$2} END{print p" / "e}')"
+
+# The service names in this script are the names in the Railway project — the
+# web dashboard is `bkg-one-cli`, not `web`. A typo used to die silently in
+# the middle of the variable pass, so every name is checked up front.
+RAILWAY_SERVICE_NAMES="$(railway service list --json 2>/dev/null |
+    python3 -c 'import json,sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+items = data if isinstance(data, list) else data.get("services", [])
+for item in items:
+    if isinstance(item, dict) and item.get("name"):
+        print(item["name"])')"
+for svc in api bkg-one-cli gateway migrations; do
+    grep -qx "$svc" <<<"$RAILWAY_SERVICE_NAMES" ||
+        die "the Railway project has no service '$svc' (have: $(tr '\n' ' ' <<<"$RAILWAY_SERVICE_NAMES"))"
+done
+ok "services: $(tr '\n' ' ' <<<"$RAILWAY_SERVICE_NAMES")"
 
 # ── 1. Push the branch ──────────────────────────────────────────────────────
 log ""
@@ -314,18 +336,18 @@ require_secret_ref api BETTER_AUTH_SECRET
 require_secret_ref api SECRET_ENCRYPTION_KEY
 require_secret_ref api GATEWAY_INTERNAL_SECRET
 
-set_vars_common web
-var_set web PORT "${SERVICE_PORT[bkg-one-cli]}"
-var_set web API_URL "$API_URL"
-var_set web GATEWAY_API_URL "$GATEWAY_URL"
-var_set web ONECLI_TRUSTED_ORIGINS "$WEB_URL"
-var_set web ONECLI_API_PORT "${SERVICE_PORT[api]}"
-var_set web ONECLI_GATEWAY_PORT "${SERVICE_PORT[gateway]}"
-var_set web GATEWAY_INTERNAL_URL "http://gateway.railway.internal:${SERVICE_PORT[gateway]}"
-var_set web API_INTERNAL_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
-var_delete web BETTER_AUTH_COOKIE_DOMAIN
-require_secret_ref web BETTER_AUTH_SECRET
-require_secret_ref web SECRET_ENCRYPTION_KEY
+set_vars_common bkg-one-cli
+var_set bkg-one-cli PORT "${SERVICE_PORT[bkg-one-cli]}"
+var_set bkg-one-cli API_URL "$API_URL"
+var_set bkg-one-cli GATEWAY_API_URL "$GATEWAY_URL"
+var_set bkg-one-cli ONECLI_TRUSTED_ORIGINS "$WEB_URL"
+var_set bkg-one-cli ONECLI_API_PORT "${SERVICE_PORT[api]}"
+var_set bkg-one-cli ONECLI_GATEWAY_PORT "${SERVICE_PORT[gateway]}"
+var_set bkg-one-cli GATEWAY_INTERNAL_URL "http://gateway.railway.internal:${SERVICE_PORT[gateway]}"
+var_set bkg-one-cli API_INTERNAL_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
+var_delete bkg-one-cli BETTER_AUTH_COOKIE_DOMAIN
+require_secret_ref bkg-one-cli BETTER_AUTH_SECRET
+require_secret_ref bkg-one-cli SECRET_ENCRYPTION_KEY
 
 set_vars_common gateway
 var_set gateway PORT "${SERVICE_PORT[gateway]}"
@@ -348,7 +370,7 @@ var_set migrations PORT "10256"
 # real URL when it reads the variable back), so the script never writes a
 # database password itself — it only sets the reference when a service has
 # none at all.
-for svc in migrations api web gateway; do
+for svc in migrations api bkg-one-cli gateway; do
     current="$(var_get "$svc" DATABASE_URL)"
     if [[ -z "$current" ]]; then
         var_set "$svc" DATABASE_URL '${{Postgres.DATABASE_URL}}'
@@ -356,6 +378,12 @@ for svc in migrations api web gateway; do
         ok "  $svc/DATABASE_URL points at the managed Postgres (kept)"
     fi
 done
+
+if [[ "$VARIABLES_ONLY" -eq 1 ]]; then
+    log ""
+    ok "variables set — stopping before the deployment (--variables-only)"
+    exit 0
+fi
 
 # ── 5. Deploy ───────────────────────────────────────────────────────────────
 # The order is load-bearing: api/web/gateway read the schema at boot, so the
@@ -432,12 +460,12 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
     wait_for_deployment migrations "$(cat /tmp/onecli-deploy-prev-migrations)" 1800
 fi
 
-for svc in api web gateway; do
+for svc in api bkg-one-cli gateway; do
     deploy_service "$svc" > "/tmp/onecli-deploy-prev-$svc"
 done
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
-    for svc in api web gateway; do
+    for svc in api bkg-one-cli gateway; do
         # The gateway image compiles the Rust workspace from scratch on
         # Railway — that build is the long pole, hence the generous budget.
         wait_for_deployment "$svc" "$(cat "/tmp/onecli-deploy-prev-$svc")" 2400
