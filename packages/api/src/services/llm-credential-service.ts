@@ -10,6 +10,7 @@ import {
 } from "../validations/conversation";
 import {
   parseAnthropicMetadata,
+  parseEyshoMetadata,
   parseOpenaiMetadata,
 } from "../validations/secret";
 import {
@@ -51,10 +52,16 @@ const authModeOf = (
   provider: LlmProviderId,
   metadata: unknown,
 ): LlmAuthMode => {
+  // Each provider reads ITS OWN metadata: the Custom provider knows one auth
+  // mode ("api-key"), so a row whose metadata claims "oauth" must not be
+  // read as a subscription login — the OpenAI parser would say it is, and the
+  // catalog fetch would then go out without the key at all.
   const parsed =
     provider === "anthropic"
       ? parseAnthropicMetadata(metadata)
-      : parseOpenaiMetadata(metadata);
+      : provider === "eysho"
+        ? parseEyshoMetadata(metadata)
+        : parseOpenaiMetadata(metadata);
   // Legacy secrets predate the metadata; api-key is what the container builder
   // assumes for them too, so the two agree by construction.
   return parsed?.authMode ?? "api-key";

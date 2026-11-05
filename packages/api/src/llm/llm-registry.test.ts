@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { anthropic } from "./anthropic";
 import { openai } from "./openai";
+import { eysho } from "./eysho";
 import { LLM_PROVIDERS, forAuthMode, isLlmProviderId } from "./registry";
 import { getModelCatalog, resetModelCatalogCache } from "./catalog-cache";
 import { resolveAgentModel } from "./resolve";
@@ -99,6 +100,22 @@ describe("the provider definitions", () => {
       "anthropic-version": "2023-06-01",
     });
   });
+
+  it("lists the Custom provider on ITS OWN origin, with a bearer", () => {
+    // The provider is OpenAI-compatible but it is NOT OpenAI: a catalog
+    // request to api.openai.com would show OpenAI's inventory and send the
+    // customer's key to a third party.
+    expect(eysho.catalogUrl).toBe("https://api.eysho.info/v1/models");
+    expect(eysho.catalogHeaders("sk-proj-x", "api-key")).toEqual({
+      authorization: "Bearer sk-proj-x",
+    });
+    // It speaks API keys only — an "oauth" mode must not send nothing.
+    expect(eysho.catalogHeaders("sk-proj-x", "oauth")).toEqual({
+      authorization: "Bearer sk-proj-x",
+    });
+    // The dashboard's name for it is "Custom", never "Eysho".
+    expect(eysho.label).toBe("Custom");
+  });
 });
 
 describe("parsing a provider catalog", () => {
@@ -124,6 +141,7 @@ describe("parsing a provider catalog", () => {
       anthropic.parseCatalog,
       openai.parseCatalog,
       forAuthMode(openai, "oauth").parseCatalog,
+      eysho.parseCatalog,
     ];
     for (const body of [
       null,
@@ -135,6 +153,25 @@ describe("parsing a provider catalog", () => {
       { models: "no" },
     ])
       for (const parse of parsers) expect(parse(body)).toEqual([]);
+  });
+
+  it("keeps the Custom provider's own catalog shape and drops malformed rows", () => {
+    // The provider answers the OpenAI list shape: { data: [{ id, display_name }] }.
+    expect(
+      eysho.parseCatalog({
+        data: [
+          { id: "gpt-4o-mini", display_name: "GPT 4o Mini" },
+          { id: "some-new-model" },
+          { id: "" },
+          { display_name: "no id" },
+          null,
+          "nonsense",
+        ],
+      }),
+    ).toEqual([
+      { id: "gpt-4o-mini", label: "GPT 4o Mini" },
+      { id: "some-new-model", label: "some-new-model" },
+    ]);
   });
 
   it("keeps only the models a ChatGPT login may pick, in the server's order", () => {
@@ -644,6 +681,53 @@ describe("the catalog cache", () => {
     );
     expect(result.degraded).toBe(true);
     expect(result.models.map((m) => m.id)).toEqual([...provider.fallback]);
+  });
+
+  it("fetches the Custom provider's catalog on its own host, with its key", async () => {
+    // The proof that the Custom provider is wired end to end on the control
+    // plane: the request goes to api.eysho.info (not api.openai.com) and
+    // carries the key as a bearer.
+    const spy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ id: "gpt-4o-mini", display_name: "GPT 4o Mini" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", spy);
+
+    const result = await getModelCatalog(
+      eysho,
+      "sec-custom",
+      async () => "sk-proj-x",
+      "api-key",
+    );
+
+    expect(result.degraded).toBe(false);
+    expect(result.models.map((m) => m.id)).toEqual(["gpt-4o-mini"]);
+    expect(spy).toHaveBeenCalledWith(
+      "https://api.eysho.info/v1/models",
+      expect.objectContaining({
+        headers: { authorization: "Bearer sk-proj-x" },
+      }),
+    );
+  });
+
+  it("degrades the Custom provider to its pinned list when the key is refused", async () => {
+    // A refused key must still leave the picker non-empty.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("{}", { status: 401 })),
+    );
+    const result = await getModelCatalog(
+      eysho,
+      "sec-custom",
+      async () => "sk-proj-x",
+      "api-key",
+    );
+    expect(result.degraded).toBe(true);
+    expect(result.models.map((m) => m.id)).toEqual([...eysho.fallback]);
   });
 });
 

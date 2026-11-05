@@ -3,6 +3,9 @@ import type { LlmProvider } from "./types";
 /**
  * `GET /v1/models` returns `{ data: [{ id, display_name }] }`.
  * Eysho is OpenAI-compatible, so we reuse the same catalog shape.
+ *
+ * An empty id is not a model and is dropped here, like in the other two
+ * parsers — the catalog must never offer a blank entry.
  */
 const parseCatalog = (body: unknown): Array<{ id: string; label?: string }> => {
   if (typeof body !== "object" || body === null) return [];
@@ -13,12 +16,12 @@ const parseCatalog = (body: unknown): Array<{ id: string; label?: string }> => {
       (x): x is { id: string; display_name?: string } =>
         !!x &&
         typeof x === "object" &&
-        typeof (x as { id?: unknown }).id === "string",
+        typeof (x as { id?: unknown }).id === "string" &&
+        (x as { id: string }).id !== "",
     )
     .map((x) => ({
       id: x.id,
       label: x.display_name ?? x.id,
-      source: "live",
     }));
 };
 
@@ -44,10 +47,13 @@ export const eysho: LlmProvider = {
   ],
   defaultEffort: "medium",
   catalogUrl: "https://api.eysho.info/v1/models",
-  catalogHeaders: (credential, authMode) =>
-    authMode === "oauth"
-      ? ({} as Record<string, string>)
-      : { authorization: `Bearer ${credential}` },
+  // The provider speaks API keys only, so the bearer is the ONLY credential
+  // shape it has. The auth mode is not consulted on purpose: a row whose
+  // metadata says "oauth" (which this provider never writes) must still list
+  // with its key, not silently fetch without one.
+  catalogHeaders: (credential) => ({
+    authorization: `Bearer ${credential}`,
+  }),
   parseCatalog,
   isSelectable: (id) => !!id,
   labelFor: humanize,

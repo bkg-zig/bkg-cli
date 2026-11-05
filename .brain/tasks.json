@@ -161,6 +161,38 @@
         "Railway auto-deploys on every push to tango, so the push triggers a full rebuild of all four services.",
         "EYSHO_API_BASE_URL is a test-double override like ANTHROPIC_API_BASE_URL / OPENAI_API_BASE_URL; it must stay in the hermetic-env list, in turbo.json's globalPassThroughEnv and out of every ambient shell."
       ]
+    },
+    {
+      "id": "railway-prod-cleanup-and-custom-catalog-2026-11-05",
+      "title": "Close the open points of the tango deployment: Custom provider catalog path, egress allowlist semantics, production test artifacts",
+      "agent": "opencode",
+      "model": "MiniMax-M3.1-Flash",
+      "tools": ["shell", "edit", "write", "read", "grep"],
+      "skills": [],
+      "scope": [
+        "packages/api/src/llm/eysho.ts, packages/api/src/llm/llm-registry.test.ts (Custom catalog request)",
+        "packages/api/src/services/llm-credential-service.ts (auth mode per provider)",
+        "scripts/deploy-railway.sh, docs/railway.md (GATEWAY_ALLOW_PRIVATE_DESTINATIONS semantics)",
+        "Railway production (test artifacts: secret, agent, account)"
+      ],
+      "startedAt": "2026-11-05T03:30:00Z",
+      "finishedAt": null,
+      "status": "in_progress",
+      "rootCauses": [
+        "The Custom provider's catalog request was never exercised: the models endpoint serves HOSTED agents only, and the Railway deployment has no runner, so a hosted agent cannot be created there. The provider's own catalog code had no test at all.",
+        "eysho.catalogHeaders sent NO authorization header when the auth mode was 'oauth' — a mode the provider does not have. A row whose metadata claimed it would have listed without its key.",
+        "The credential's auth mode was read with the OPENAI metadata parser for every non-Anthropic provider, so a Custom row whose metadata said 'oauth' was classified as a subscription login.",
+        "eysho.parseCatalog kept a row with an empty id (the other two parsers drop it) and stamped a 'source' field the parser contract does not have.",
+        "The deploy script set GATEWAY_ALLOW_PRIVATE_DESTINATIONS=true. The egress guard parses that variable as a LIST of hosts/IPs/CIDRs, so 'true' became the hostname 'true': an allow-list that allows nothing, presented as 'allow everything'."
+      ],
+      "changedFiles": [],
+      "commits": [],
+      "verification": [],
+      "blockers": [],
+      "notes": [
+        "The hosted jcode harness routes only to claude / claude-api / codex — there is no route for a third provider, so a HOSTED agent cannot run a turn on the Custom provider yet. The gateway injection and the control plane's direct calls can.",
+        "The Railway deployment has no runner service: POST /v1/agents with kind=hosted answers 422 'No runner is available to host this agent.'"
+      ]
     }
   ]
 }

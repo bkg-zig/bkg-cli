@@ -370,7 +370,12 @@ var_set gateway INTERNAL_API_URL "http://api.railway.internal:${SERVICE_PORT[api
 var_set gateway API_INTERNAL_URL "http://api.railway.internal:${SERVICE_PORT[api]}"
 var_delete gateway API_URL "the gateway calls the api over the private network"
 var_delete gateway GATEWAY_API_URL "the gateway is reached over the private network"
-var_set gateway GATEWAY_ALLOW_PRIVATE_DESTINATIONS "true"
+# The egress guard refuses non-public destinations by default. This variable
+# is an OPERATOR ALLOW-LIST (hostnames, IPs, CIDRs), not a boolean: the value
+# "true" was parsed as the hostname `true` and allowed nothing, which reads
+# like "allow everything" and is not. No list → the guard stays on. An
+# operator who really wants internal targets lists them explicitly.
+var_delete gateway GATEWAY_ALLOW_PRIVATE_DESTINATIONS "the egress guard refuses non-public destinations; the allow-list takes hosts/CIDRs, not 'true'"
 # The gateway image runs as the unprivileged user `onecli`; a Railway volume
 # is mounted root-owned, so the CA directory would not be writable. Railway's
 # documented switch for that is RAILWAY_RUN_UID=0 (the container then runs as

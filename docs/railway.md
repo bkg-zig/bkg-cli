@@ -95,15 +95,16 @@ every encrypted credential in the database.
 
 - `SECRET_ENCRYPTION_KEY` — web, api, gateway.
 - `GATEWAY_INTERNAL_SECRET` — api, gateway.
-- `BETTER_AUTH_SECRET` — web, api.
+- `BETTER_AUTH_SECRET` — web, api, **gateway**. The gateway verifies the
+  dashboard's session cookie (`context::auth`), so it needs the same signing
+  secret as the api; without it every browser call through `/gw` is rejected
+  with "session auth: BETTER_AUTH_SECRET not set".
 
 The deploy script sets the non-secret wiring:
 
 - `DATABASE_URL` — `${{Postgres.DATABASE_URL}}` on migrations, api, web and
   gateway.
 - `ONECLI_EXTERNAL_URL` / `APP_URL` — the public dashboard URL.
-- `API_URL` — the public API origin; `GATEWAY_API_URL` — the public gateway
-  origin.
 - `ONECLI_TRUSTED_ORIGINS` — the dashboard origin (CORS allow-list).
 - `PORT` — the port the image listens on (10254 web, 10256 api, 10255
   gateway). Railway's default is 8080; the OneCLI images listen on their own
@@ -115,11 +116,31 @@ The deploy script sets the non-secret wiring:
   gateway image runs as the unprivileged user `onecli`, and the CA directory
   has to be writable; this is Railway's documented switch for that.
 
-`BETTER_AUTH_COOKIE_DOMAIN` stays **unset** on Railway: the public domains
-are siblings under `up.railway.app`, and a cookie scoped to that shared
-parent would be readable by every other application on it. Without it
-Better-Auth issues a host-only cookie, which the dashboard sends to the API
-because both are same-site.
+`API_URL` and `GATEWAY_API_URL` are **deleted** on every service (single
+origin — see above), and `BETTER_AUTH_COOKIE_DOMAIN` stays **unset**: the
+public domains are siblings under `up.railway.app`, and a cookie scoped to
+that shared parent would be readable by every other application on it.
+Without it Better-Auth issues a host-only cookie, which the dashboard sends
+to the API because both are same-site.
+
+### `GATEWAY_ALLOW_PRIVATE_DESTINATIONS` — a list, not a switch
+
+The gateway refuses non-public destinations by default (SSRF guard). The
+variable is an **operator allow-list**: a comma-separated list of hostnames,
+IP addresses or CIDRs that may be reached anyway (`*.suffix` for a domain
+suffix). It is not a boolean — `GATEWAY_ALLOW_PRIVATE_DESTINATIONS=true` is
+parsed as the _hostname_ `true` and allows nothing, which reads like "allow
+everything" but is not.
+
+The deploy script therefore **deletes** the variable on the gateway: with no
+list, the guard stays on and refuses private, loopback and link-local
+destinations. An operator who really wants internal targets lists them
+explicitly (for example `10.0.0.0/8,db.internal`), and the gateway logs the
+entries it loaded at boot.
+
+The gateway's own service-to-service calls (api, Postgres, Redis) do not pass
+through that guard — it applies to the destinations an _agent_ asks the
+gateway to reach.
 
 ## Dockerfile constraints
 
