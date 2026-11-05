@@ -176,8 +176,8 @@
         "Railway production (test artifacts: secret, agent, account)"
       ],
       "startedAt": "2026-11-05T03:30:00Z",
-      "finishedAt": null,
-      "status": "in_progress",
+      "finishedAt": "2026-11-05T04:15:00Z",
+      "status": "done",
       "rootCauses": [
         "The Custom provider's catalog request was never exercised: the models endpoint serves HOSTED agents only, and the Railway deployment has no runner, so a hosted agent cannot be created there. The provider's own catalog code had no test at all.",
         "eysho.catalogHeaders sent NO authorization header when the auth mode was 'oauth' — a mode the provider does not have. A row whose metadata claimed it would have listed without its key.",
@@ -185,13 +185,35 @@
         "eysho.parseCatalog kept a row with an empty id (the other two parsers drop it) and stamped a 'source' field the parser contract does not have.",
         "The deploy script set GATEWAY_ALLOW_PRIVATE_DESTINATIONS=true. The egress guard parses that variable as a LIST of hosts/IPs/CIDRs, so 'true' became the hostname 'true': an allow-list that allows nothing, presented as 'allow everything'."
       ],
-      "changedFiles": [],
-      "commits": [],
-      "verification": [],
+      "changedFiles": [
+        "packages/api/src/llm/eysho.ts",
+        "packages/api/src/llm/llm-registry.test.ts",
+        "packages/api/src/services/llm-credential-service.ts",
+        "scripts/deploy-railway.sh",
+        "docs/railway.md",
+        ".brain/tasks.json"
+      ],
+      "commits": [
+        "fix(railway,llm): the Custom provider's catalog request, and an honest egress allow-list"
+      ],
+      "verification": [
+        "vitest (packages/api, full suite) → 5363 passed, 0 failed, 1871 skipped",
+        "vitest (packages/api, targeted) → llm-registry 40 passed (incl. 4 new Custom-catalog tests), llm-direct-call 25, path-match 11, hermetic-env 17",
+        "pnpm --filter @onecli/api lint → clean; check-types → clean; prettier → clean",
+        "bash -n scripts/deploy-railway.sh → ok (shellcheck is not installed here)",
+        "deploy script --variables-only → gateway/GATEWAY_ALLOW_PRIVATE_DESTINATIONS deleted, every other variable 'already correct' or 'not set'",
+        "Railway after the push of bdd61a5b → migrations, api, bkg-one-cli, gateway all SUCCESS; health 200 on web /healthz, web /v1/health, web /gw/healthz, api /v1/health, gateway /healthz",
+        "gateway log (deployment 1390ecc1) → 'egress guard: non-public destinations are refused (GATEWAY_ALLOW_PRIVATE_DESTINATIONS unset)' ×1, 'BETTER_AUTH_SECRET not set' ×0",
+        "browser on the final build → sign-up works, Connections → LLMs → 'Add LLM Key' shows the third option 'Custom — Inject an API key for requests to api.eysho.info'",
+        "production cleanup → secret, agent and the test account deleted (HTTP 204 each), a second verification account deleted (204), /v1/auth/session afterwards → 401"
+      ],
       "blockers": [],
       "notes": [
         "The hosted jcode harness routes only to claude / claude-api / codex — there is no route for a third provider, so a HOSTED agent cannot run a turn on the Custom provider yet. The gateway injection and the control plane's direct calls can.",
-        "The Railway deployment has no runner service: POST /v1/agents with kind=hosted answers 422 'No runner is available to host this agent.'"
+        "The Railway deployment has no runner service: POST /v1/agents with kind=hosted answers 422 'No runner is available to host this agent.'",
+        "No valid Eysho key is available here, and api.eysho.info answers 401 without one — so the LIVE catalog of the real provider is not proven; the request path is proven against a stub and in the unit test.",
+        "The compose stack under /srv/bkg/services/onecli was NOT started: no onecli-* images exist on this host and only postgres is running. cli.eysho.info is unchanged (404).",
+        "The Railway CLI is now linked to the web service (bkg-one-cli) instead of Postgres, so a stray command without --service cannot touch the database."
       ]
     }
   ]
